@@ -1,0 +1,78 @@
+/* Inventory Page Styles */
+
+.stock-level-bar-container {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.stock-level-bar {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--transition-normal);
+}
+
+.stock-level-bar.good {
+  background: linear-gradient(90deg, var(--success), #34d399);
+}
+
+.stock-level-bar.low {
+  background: linear-gradient(90deg, var(--warning), #fbbf24);
+}
+
+.stock-level-bar.out {
+  background: var(--danger);
+  width: 0% !important;
+}
+
+.clickable {
+  cursor: pointer;
+  transition: transform var(--transition-fast), border-color var(--transition-fast);
+}
+
+.clickable:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.alert-warning-card::before {
+  background: linear-gradient(90deg, var(--warning), #f59e0b) !important;
+}
+
+.alert-danger-card::before {
+  background: linear-gradient(90deg, var(--danger), #ef4444) !important;
+}
+
+.inventory-controls {
+  padding: var(--space-md) var(--space-lg);
+}
+
+/* Modal form group alignment tweaks */
+.modal-body .input-group {
+  margin-bottom: var(--space-md);
+}
+
+.modal-body .input-group:last-child {
+  margin-bottom: 0;
+}
+
+/* Table overrides for inventory badge alignment */
+td .badge {
+  text-transform: capitalize;
+}
+
+/* Responsive adjust controls for table */
+@media (max-width: 768px) {
+  .flex.justify-center.gap-xs {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  
+  .flex.justify-center.gap-xs button {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+}

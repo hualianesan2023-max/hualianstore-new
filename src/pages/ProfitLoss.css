@@ -1,0 +1,104 @@
+/* ===== Profit & Loss Styles ===== */
+
+/* Date Filter Buttons */
+.date-filters button {
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.date-filters button:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.date-filters button.active {
+  background: var(--accent-secondary);
+  color: white;
+  border-color: var(--accent-secondary);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+}
+
+/* KPI Card Custom Accents */
+.profit-card-sales {
+  border-left: 4px solid var(--accent-secondary);
+}
+
+.profit-card-cost {
+  border-left: 4px solid #f97316; /* Orange color for COGS */
+}
+
+.profit-card-net.net-positive {
+  border-left: 4px solid var(--success);
+  background: rgba(16, 185, 129, 0.03);
+}
+
+.profit-card-net.net-negative {
+  border-left: 4px solid var(--danger);
+  background: rgba(239, 68, 68, 0.03);
+}
+
+.profit-card-margin {
+  border-left: 4px solid var(--accent-primary);
+}
+
+/* Chart Custom Tooltip Styling */
+.custom-tooltip {
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tooltip-label {
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.tooltip-row-label {
+  color: var(--text-secondary);
+}
+
+.tooltip-row-value {
+  font-weight: 600;
+}
+
+.tooltip-row-value.blue {
+  color: #3b82f6;
+}
+
+.tooltip-row-value.orange {
+  color: #f97316;
+}
+
+.tooltip-row-value.green {
+  color: #10b981;
+}
+
+.tooltip-row-value.red {
+  color: #ef4444;
+}
+
+.tooltip-row.border-top {
+  border-top: 1px solid var(--border-color);
+  padding-top: 4px;
+  margin-top: 4px;
+}
