@@ -497,10 +497,10 @@ const Products = () => {
                 <thead>
                   <tr>
                     <th>สินค้า</th>
-                    <th>หมวดหมู่</th>
                     <th>ราคาทุน</th>
                     <th>ราคาสาขา</th>
                     <th>ราคาขาย</th>
+                    <th>หมวดหมู่</th>
                     <th style={{ textAlign: 'center' }}>ที่อยู่ออฟฟิต</th>
                     <th style={{ textAlign: 'center' }}>ที่อยู่โกดังกุ๊กไก่</th>
                     <th style={{ textAlign: 'center' }}>ที่อยู่โกดังใหญ่</th>
@@ -550,11 +550,6 @@ const Products = () => {
                           </div>
                         </td>
                         <td>
-                          <span className="category-badge">
-                            {cat?.icon} {cat?.name || product.category}
-                          </span>
-                        </td>
-                        <td>
                           <span className="price-cost">{formatPrice(product.costPrice)}</span>
                         </td>
                         <td>
@@ -562,6 +557,11 @@ const Products = () => {
                         </td>
                         <td>
                           <span className="price-sell">{formatPrice(product.sellPrice)}</span>
+                        </td>
+                        <td>
+                          <span className="category-badge">
+                            {cat?.icon} {cat?.name || product.category}
+                          </span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <span className="stock-number" style={{ color: product.stockOffice > 0 ? '#f1f5f9' : '#475569' }}>

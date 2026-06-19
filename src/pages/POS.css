@@ -1124,6 +1124,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: left;
+  margin-top: 2px;
 }
 
 .pos-product-row .product-barcode {
