@@ -83,6 +83,13 @@ const POS = () => {
   const [selectedSalesperson, setSelectedSalesperson] = useState('หน้าร้าน');
   const [globalPriceType, setGlobalPriceType] = useState('sell');
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategory, searchQuery]);
+
   const handleGlobalPriceTypeChange = (newType) => {
     setGlobalPriceType(newType);
     setCart((prevCart) =>
@@ -156,6 +163,13 @@ const POS = () => {
       return matchesCategory && matchesSearch;
     });
   }, [normalisedProducts, selectedCategory, searchQuery]);
+
+  const paginatedProducts = React.useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredProducts.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredProducts, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
 
   // === Handle search with barcode auto-add ===
   const handleSearch = (e) => {
@@ -583,8 +597,8 @@ const POS = () => {
 
         {/* Products List (Vertical Row Layout) */}
         <div className="pos-list">
-          {filteredProducts.length > 0 ? (
-            filteredProducts.map((product) => (
+          {paginatedProducts.length > 0 ? (
+            paginatedProducts.map((product) => (
               <div
                 key={product.id}
                 className={`pos-product-row ${
@@ -639,6 +653,69 @@ const POS = () => {
             </div>
           )}
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="pos-pagination" style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginTop: '16px',
+            padding: '12px 16px',
+            background: '#1a1b26',
+            border: '2px solid #2e303a',
+            borderRadius: '14px',
+            boxSizing: 'border-box'
+          }}>
+            <button
+              className="btn"
+              disabled={currentPage === 1}
+              onClick={() => {
+                setCurrentPage(prev => Math.max(prev - 1, 1));
+                // Scroll to top of POS list on page change
+                const posList = document.querySelector('.pos-list');
+                if (posList) posList.scrollTop = 0;
+              }}
+              style={{
+                padding: '8px 16px',
+                background: currentPage === 1 ? '#1f2937' : '#4f46e5',
+                color: currentPage === 1 ? '#9ca3af' : '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                fontWeight: '600',
+                outline: 'none'
+              }}
+            >
+              ⬅️ ย้อนกลับ
+            </button>
+            <span style={{ color: '#f3f4f6', fontSize: '13px', fontWeight: '600', textAlign: 'center' }}>
+              หน้า {currentPage} / {totalPages} (ทั้งหมด {filteredProducts.length} รายการ)
+            </span>
+            <button
+              className="btn"
+              disabled={currentPage === totalPages}
+              onClick={() => {
+                setCurrentPage(prev => Math.min(prev + 1, totalPages));
+                // Scroll to top of POS list on page change
+                const posList = document.querySelector('.pos-list');
+                if (posList) posList.scrollTop = 0;
+              }}
+              style={{
+                padding: '8px 16px',
+                background: currentPage === totalPages ? '#1f2937' : '#4f46e5',
+                color: currentPage === totalPages ? '#9ca3af' : '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                fontWeight: '600',
+                outline: 'none'
+              }}
+            >
+              ถัดไป ➡️
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ====== Right Panel — Cart ====== */}
