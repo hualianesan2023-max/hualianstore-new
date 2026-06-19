@@ -623,11 +623,14 @@ const POS = () => {
                   </div>
                 </div>
                 <div className="product-price-wrapper">
-                  <span className="product-price">
-                    ฿{product.sellPrice.toLocaleString()}
+                  <span className="product-price-cost">
+                    ทุน: ฿{(product.costPrice || 0).toLocaleString()}
                   </span>
-                  <span style={{ fontSize: '11px', color: '#818cf8', fontWeight: '600', marginTop: '2px' }}>
+                  <span className="product-price-branch">
                     สาขา: ฿{product.branchPrice?.toLocaleString() || product.sellPrice?.toLocaleString()}
+                  </span>
+                  <span className="product-price-sell">
+                    ขาย: ฿{product.sellPrice.toLocaleString()}
                   </span>
                   <span
                     className={`product-stock ${
@@ -635,7 +638,6 @@ const POS = () => {
                         ? 'low-stock'
                         : ''
                     }`}
-                    style={{ marginTop: '2px' }}
                   >
                     {product.stock <= 0
                       ? 'สินค้าหมด'
