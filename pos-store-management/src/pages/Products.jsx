@@ -4,7 +4,7 @@ import { categories as categoryList } from '../data/mockData';
 import './Products.css';
 
 // ─── Product Types (Brands) ───────────────────────────────────────────
-const DEFAULT_PRODUCT_TYPES = [
+const PRODUCT_TYPES = [
   { id: 'Dingye', name: 'Dingye', prefix: 'DY' },
   { id: 'Hualian', name: 'Hualian', prefix: 'HL' },
   { id: 'Brother', name: 'Brother', prefix: 'BR' },
@@ -17,32 +17,25 @@ const DEFAULT_PRODUCT_TYPES = [
   { id: 'ZHEJIANG HUILI', name: 'ZHEJIANG HUILI', prefix: 'ZH' },
 ];
 
-const getProductTypes = () => {
-  if (typeof window === 'undefined') return DEFAULT_PRODUCT_TYPES;
-  const local = localStorage.getItem('custom_product_types');
-  if (local) {
-    try {
-      const parsed = JSON.parse(local);
-      return [...DEFAULT_PRODUCT_TYPES, ...parsed];
-    } catch (e) {
-      return DEFAULT_PRODUCT_TYPES;
-    }
-  }
-  return DEFAULT_PRODUCT_TYPES;
-};
-
 const getTypeFromBarcode = (barcode) => {
   if (!barcode) return 'Dingye';
   const clean = barcode.toUpperCase();
-  const types = getProductTypes();
-  const match = types.find((t) => clean.startsWith(t.prefix.toUpperCase()));
-  return match ? match.id : 'Dingye';
+  if (clean.startsWith('DY')) return 'Dingye';
+  if (clean.startsWith('HL')) return 'Hualian';
+  if (clean.startsWith('BR')) return 'Brother';
+  if (clean.startsWith('GD')) return 'บรรจุน้ำ';
+  if (clean.startsWith('CGF')) return 'ไลน์บรรจุน้ำ';
+  if (clean.startsWith('NB')) return 'NB';
+  if (clean.startsWith('RICE')) return 'เครื่องสีข้าว';
+  if (clean.startsWith('BP')) return 'BESPACKER';
+  if (clean.startsWith('CY')) return 'เครื่องห่อแนวนอน';
+  if (clean.startsWith('ZH')) return 'ZHEJIANG HUILI';
+  return 'Dingye';
 };
 
 // ─── Generate Barcode based on product type prefix ────────────────────
 const generateBarcode = (typeVal, productsList) => {
-  const types = getProductTypes();
-  const typeObj = types.find((t) => t.id === typeVal);
+  const typeObj = PRODUCT_TYPES.find((t) => t.id === typeVal);
   if (!typeObj) return '';
   const prefix = typeObj.prefix;
   
@@ -71,50 +64,6 @@ const generateBarcode = (typeVal, productsList) => {
 const Products = () => {
   const { state, dispatch } = useStore();
   const isUserRole = state?.currentUser?.role === 'user' || state?.currentUser?.role === 'sale';
-  
-  // Custom Product Type States
-  const [productTypes, setProductTypes] = useState(() => getProductTypes());
-  const [isAddingNewType, setIsAddingNewType] = useState(false);
-  const [newTypeForm, setNewTypeForm] = useState({ name: '', prefix: '' });
-
-  const handleSaveNewType = () => {
-    const { name, prefix } = newTypeForm;
-    const cleanName = name.trim();
-    const cleanPrefix = prefix.trim().toUpperCase();
-
-    if (!cleanName || !cleanPrefix) {
-      alert('กรุณากรอกข้อมูลประเภทและตัวย่อให้ครบถ้วน!');
-      return;
-    }
-
-    const currentTypes = getProductTypes();
-    if (currentTypes.some((t) => t.id.toLowerCase() === cleanName.toLowerCase() || t.prefix.toUpperCase() === cleanPrefix)) {
-      alert('ชื่อประเภทหรือตัวย่อรหัสเครื่องนี้มีอยูแล้ว!');
-      return;
-    }
-
-    const newTypeObj = { id: cleanName, name: cleanName, prefix: cleanPrefix };
-    const localCustoms = localStorage.getItem('custom_product_types');
-    let customs = [];
-    if (localCustoms) {
-      try {
-        customs = JSON.parse(localCustoms);
-      } catch (e) {}
-    }
-    customs.push(newTypeObj);
-    localStorage.setItem('custom_product_types', JSON.stringify(customs));
-    
-    setProductTypes([...DEFAULT_PRODUCT_TYPES, ...customs]);
-    
-    // Select the new type in form
-    setFormData(prev => ({
-      ...prev,
-      type: cleanName,
-      barcode: generateBarcode(cleanName, state.products)
-    }));
-    
-    setIsAddingNewType(false);
-  };
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [stockFilter, setStockFilter] = useState('all');
@@ -372,7 +321,6 @@ const Products = () => {
   const closeModal = () => {
     setShowModal(false);
     setEditingProduct(null);
-    setIsAddingNewType(false);
   };
 
   const handleFormChange = (field, value) => {
@@ -768,95 +716,30 @@ const Products = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>ประเภท *</label>
-                  {isAddingNewType ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <input
-                          type="text"
-                          placeholder="ชื่อยี่ห้อ (เช่น Mitsubishi)"
-                          value={newTypeForm.name}
-                          onChange={(e) => setNewTypeForm(p => ({ ...p, name: e.target.value }))}
-                          required
-                          style={{ flex: 1, fontSize: '12.5px', padding: '8px' }}
-                        />
-                        <input
-                          type="text"
-                          placeholder="ตัวย่อรหัส (เช่น MS)"
-                          value={newTypeForm.prefix}
-                          onChange={(e) => setNewTypeForm(p => ({ ...p, prefix: e.target.value.toUpperCase() }))}
-                          required
-                          style={{ width: '100px', fontSize: '12.5px', padding: '8px' }}
-                        />
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => setIsAddingNewType(false)}
-                          style={{ padding: '4px 10px', height: 'auto', fontSize: '11px', minWidth: '60px' }}
-                        >
-                          ยกเลิก
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          onClick={handleSaveNewType}
-                          style={{ padding: '4px 10px', height: 'auto', fontSize: '11px', minWidth: '60px', background: '#10b981', borderColor: '#10b981' }}
-                        >
-                          บันทึก
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <select
-                      value={formData.type}
-                      onChange={(e) => {
-                        if (e.target.value === 'ADD_NEW_TYPE') {
-                          setNewTypeForm({ name: '', prefix: '' });
-                          setIsAddingNewType(true);
-                        } else {
-                          handleFormChange('type', e.target.value);
-                        }
-                      }}
-                      required
-                      disabled={!!editingProduct}
-                    >
-                      {productTypes.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                      {!editingProduct && (
-                        <option value="ADD_NEW_TYPE">➕ เพิ่มประเภทใหม่...</option>
-                      )}
-                    </select>
-                  )}
+                  <select
+                    value={formData.type}
+                    onChange={(e) => handleFormChange('type', e.target.value)}
+                    required
+                    disabled={!!editingProduct}
+                  >
+                    {PRODUCT_TYPES.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="form-group">
                   <label>รหัสเครื่อง *</label>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <input
-                      type="text"
-                      placeholder="รหัสเครื่อง (เช่น DY-084)"
-                      value={formData.barcode}
-                      onChange={(e) => handleFormChange('barcode', e.target.value)}
-                      required
-                      style={{ flex: 1 }}
-                    />
-                    {!editingProduct && (
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        title="สร้างรหัสอัตโนมัติ"
-                        onClick={() => handleFormChange('barcode', generateBarcode(formData.type, state.products))}
-                        style={{ width: '38px', height: '38px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                      >
-                        🔄
-                      </button>
-                    )}
-                  </div>
+                  <input
+                    type="text"
+                    placeholder="รหัสเครื่องจะสร้างให้อัตโนมัติ"
+                    value={formData.barcode}
+                    readOnly
+                    style={{ background: '#1e293b', cursor: 'not-allowed', color: '#94a3b8' }}
+                  />
                   <span style={{ fontSize: '11px', color: '#10b981', marginTop: '2px', display: 'block' }}>
-                    ℹ️ แก้ไขรหัสได้ตามต้องการ หรือกด 🔄 เพื่อสร้างรหัสอัตโนมัติ
+                    ℹ️ สร้างรหัสอัตโนมัติตามประเภท (ไม่สามารถแก้ไขได้)
                   </span>
                 </div>
               </div>

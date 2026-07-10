@@ -1,0 +1,29 @@
+/* Main Application Layout */
+
+.app-container {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.main-content {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  transition: margin-left var(--sidebar-transition, 0.28s cubic-bezier(0.4, 0, 0.2, 1));
+  padding: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.app-container.sidebar-collapsed .main-content {
+  margin-left: var(--sidebar-collapsed-width);
+}
+
+/* Responsive adjustment */
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0 !important;
+    padding-top: 56px; /* Space for the floating hamburger button on mobile */
+  }
+}

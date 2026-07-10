@@ -1,0 +1,207 @@
+/* Settings Page Styles */
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: var(--space-xl);
+}
+
+.settings-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.input-group-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+.section-subtitle {
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: var(--space-sm);
+}
+
+/* Branch List styling */
+.add-branch-form {
+  margin-bottom: var(--space-md);
+}
+
+.branch-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  max-height: 250px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.branch-item {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast);
+}
+
+.branch-item:hover {
+  border-color: var(--text-muted);
+}
+
+.branch-icon {
+  margin-right: 8px;
+}
+
+.branch-name {
+  font-weight: 500;
+}
+
+/* Delete item button */
+.btn-delete-item {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.btn-delete-item:hover {
+  background: var(--danger-light);
+  color: var(--danger);
+}
+
+/* Promotions style list */
+.promo-form {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--border-color);
+  padding: var(--space-md);
+  border-radius: var(--radius-lg);
+}
+
+.promo-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.promo-item {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  padding: 12px var(--space-md);
+  border-radius: var(--radius-md);
+  transition: opacity var(--transition-fast);
+}
+
+.promo-item.inactive {
+  opacity: 0.5;
+}
+
+.promo-badge {
+  background: var(--accent-primary-light);
+  color: var(--accent-primary);
+  font-family: monospace;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+}
+
+.promo-title {
+  font-size: var(--font-sm);
+}
+
+.promo-details {
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* Custom switch toggle */
+.switch-container {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 22px;
+}
+
+.switch-container input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--bg-tertiary);
+  transition: .2s;
+  border-radius: 22px;
+}
+
+.switch-slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .2s;
+  border-radius: 50%;
+}
+
+input:checked + .switch-slider {
+  background-color: var(--accent-primary);
+}
+
+input:checked + .switch-slider:before {
+  transform: translateX(22px);
+}
+
+/* Settings Toast Notification */
+.settings-toast {
+  position: fixed;
+  bottom: var(--space-xl);
+  right: var(--space-xl);
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent-primary);
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
+  padding: 12px 24px;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  z-index: 2000;
+  animation: slideIn 0.3s ease;
+}
+
+/* Responsive grid */
+@media (max-width: 1024px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-lg);
+  }
+}
+
+@media (max-width: 500px) {
+  .input-group-row {
+    grid-template-columns: 1fr;
+    gap: var(--space-sm);
+  }
+}
