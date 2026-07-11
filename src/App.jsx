@@ -9,6 +9,7 @@ import Login from './pages/Login';
 import Customers from './pages/Customers';
 import ProfitLoss from './pages/ProfitLoss';
 import Users from './pages/Users';
+import Quotation from './pages/Quotation';
 import './App.css';
 
 function AppContent() {
@@ -34,6 +35,7 @@ function AppContent() {
             <Route path="/" element={<Navigate to={defaultHome} replace />} />
             <Route path="/pos" element={isSaleRole ? <Navigate to="/products" replace /> : <POS />} />
             <Route path="/products" element={<Products />} />
+            <Route path="/quotation" element={<Quotation />} />
             <Route path="/customers" element={isSaleRole ? <Navigate to="/products" replace /> : <Customers />} />
             <Route path="/profit-loss" element={<ProfitLoss />} />
             <Route path="/users" element={(isUserRole || isSaleRole) ? <Navigate to={defaultHome} replace /> : <Users />} />

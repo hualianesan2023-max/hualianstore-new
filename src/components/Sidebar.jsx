@@ -20,6 +20,7 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
   const hualianItems = [
     { path: '/pos', icon: '🛒', label: 'ขายสินค้า', disabled: isSaleRole },
     { path: '/products', icon: '📦', label: 'สินค้า', disabled: false },
+    { path: '/quotation', icon: '📄', label: 'ใบเสนอราคา', disabled: false },
   ];
 
   const generalItems = [

@@ -83,6 +83,130 @@ const POS = () => {
   const [selectedSalesperson, setSelectedSalesperson] = useState('หน้าร้าน');
   const [globalPriceType, setGlobalPriceType] = useState('sell');
 
+  // === Quotation-to-Order ===
+  const [savedQuotations, setSavedQuotations] = useState([]);
+  const [quotationSearchQuery, setQuotationSearchQuery] = useState('');
+  const [showQuotationModal, setShowQuotationModal] = useState(false);
+
+  // Load quotations from localStorage on mount and whenever input is focused
+  const loadQuotationsFromStorage = () => {
+    const raw = localStorage.getItem('pos_quotations');
+    if (raw) {
+      try { setSavedQuotations(JSON.parse(raw)); } catch (_) {}
+    } else {
+      setSavedQuotations([]);
+    }
+  };
+
+  const handleDirectQuotationSearch = () => {
+    const rawQuery = quotationSearchQuery.trim();
+    if (!rawQuery) return;
+
+    // Load from storage to get freshest list
+    const raw = localStorage.getItem('pos_quotations');
+    let list = [];
+    if (raw) {
+      try { list = JSON.parse(raw); } catch (_) {}
+    }
+
+    // Find exact match (case-insensitive)
+    const matched = list.find(q => q.id && q.id.toLowerCase() === rawQuery.toLowerCase());
+
+    if (matched) {
+      // Map items to cart items
+      const newCart = (matched.items || []).map(item => ({
+        id: item.productId || `q-${Date.now()}-${Math.random()}`,
+        productId: item.productId || item.id || '',
+        name: item.name,
+        sellPrice: item.sellPrice || 0,
+        branchPrice: item.sellPrice || 0,
+        costPrice: item.costPrice || 0,
+        image: item.image || '📦',
+        quantity: item.quantity || 1,
+        barcode: item.barcode || '',
+        selectedLocation: 'โกดังใหญ่',
+        priceType: 'sell',
+        unit: item.unit || 'เครื่อง',
+      }));
+
+      setCart(newCart);
+
+      // Auto-fill customer info
+      if (matched.customerName) {
+        setCustomerType('general');
+        setGeneralCustomerName(matched.customerName || '');
+        setGeneralCustomerPhone(matched.customerPhone || '');
+        setGeneralCustomerAddress(matched.customerAddress || '');
+        setShowGeneralCustomerFields(true);
+      }
+
+      // Delete the quotation from localStorage
+      const updatedList = list.filter(q => q.id !== matched.id);
+      setSavedQuotations(updatedList);
+      localStorage.setItem('pos_quotations', JSON.stringify(updatedList));
+
+      setQuotationSearchQuery('');
+      showToast(`✅ โหลดใบเสนอราคา ${matched.id} สำเร็จ — ${newCart.length} รายการ`, 'success');
+    } else {
+      alert('ไม่มีใบเสนอราคานี้');
+    }
+  };
+
+  useEffect(() => {
+    loadQuotationsFromStorage();
+  }, []);
+
+  // Load a quotation into the current POS session and delete it from history
+  const handleLoadFromQuotation = (quotation) => {
+    if (!quotation) return;
+
+    // Map quotation items -> cart items
+    const newCart = (quotation.items || []).map(item => ({
+      id: item.productId || `q-${Date.now()}-${Math.random()}`,
+      productId: item.productId || item.id || '',
+      name: item.name,
+      sellPrice: item.sellPrice || 0,
+      branchPrice: item.sellPrice || 0,
+      costPrice: item.costPrice || 0,
+      image: item.image || '📦',
+      quantity: item.quantity || 1,
+      barcode: item.barcode || '',
+      selectedLocation: 'โกดังใหญ่',
+      priceType: 'sell',
+      unit: item.unit || 'เครื่อง',
+    }));
+
+    setCart(newCart);
+
+    // Auto-fill customer info
+    if (quotation.customerName) {
+      setCustomerType('general');
+      setGeneralCustomerName(quotation.customerName || '');
+      setGeneralCustomerPhone(quotation.customerPhone || '');
+      setGeneralCustomerAddress(quotation.customerAddress || '');
+      setShowGeneralCustomerFields(true);
+    }
+
+    // Delete the quotation from localStorage and state
+    const updatedList = savedQuotations.filter(q => q.id !== quotation.id);
+    setSavedQuotations(updatedList);
+    localStorage.setItem('pos_quotations', JSON.stringify(updatedList));
+
+    setShowQuotationModal(false);
+    showToast(`✅ โหลดใบเสนอราคา ${quotation.id} สำเร็จ — ${newCart.length} รายการ`, 'success');
+  };
+
+  // Filtered quotations inside modal
+  const filteredQuotations = React.useMemo(() => {
+    const q = quotationSearchQuery.toLowerCase().trim();
+    if (!q) return savedQuotations;
+    return savedQuotations.filter(qt =>
+      (qt.id && qt.id.toLowerCase().includes(q)) ||
+      (qt.customerName && qt.customerName.toLowerCase().includes(q)) ||
+      (qt.customerPhone && qt.customerPhone.includes(q))
+    );
+  }, [savedQuotations, quotationSearchQuery]);
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
@@ -538,7 +662,7 @@ const POS = () => {
     <div className="pos-container">
       {/* ====== Left Panel — Products ====== */}
       <div className="pos-products">
-        {/* Top Header Row: Search + Salesperson Select */}
+        {/* Top Header Row: Search + Salesperson + Quotation Loader */}
         <div className="pos-top-row">
           <div className="pos-search">
             <input
@@ -549,24 +673,158 @@ const POS = () => {
               placeholder="ค้นหาสินค้า หรือ สแกนบาร์โค้ด..."
             />
           </div>
-          <div className="pos-salesperson-select">
+
+          {/* Salesperson — compact */}
+          <div className="pos-salesperson-select pos-salesperson-compact">
             <select
               value={selectedSalesperson}
               onChange={(e) => setSelectedSalesperson(e.target.value)}
             >
-              <option value="หน้าร้าน">🏪 หน้าร้าน (Default)</option>
+              <option value="หน้าร้าน">🏪 หน้าร้าน</option>
               <option value="Shopee">🛍️ Shopee</option>
               <option value="Tiktok">🎵 Tiktok</option>
               <option value="เพจ">📱 เพจ</option>
-              <option value="สายฝน(ฝน)">👩‍💼 สายฝน(ฝน)</option>
-              <option value="สุบิน(ต๋อง)">👨‍💼 สุบิน(ต๋อง)</option>
-              <option value="ชฎาพร(แก้ม)">👩‍💼 ชฎาพร(แก้ม)</option>
-              <option value="โชคชัย(เอ็ก)">👨‍💼 โชคชัย(เอ็ก)</option>
-              <option value="เกียรติชัย (พี่เกียรติ)">👨‍💼 เกียรติชัย (พี่เกียรติ)</option>
-              <option value="พรหมโชติ(แซมมี่)">👩‍💼 พรหมโชติ(แซมมี่)</option>
+              <option value="สายฝน(ฝน)">👩 สายฝน</option>
+              <option value="สุบิน(ต๋อง)">👨 สุบิน</option>
+              <option value="ชฎาพร(แก้ม)">👩 ชฎาพร</option>
+              <option value="โชคชัย(เอ็ก)">👨 โชคชัย</option>
+              <option value="เกียรติชัย (พี่เกียรติ)">👨 เกียรติชัย</option>
+              <option value="พรหมโชติ(แซมมี่)">👩 พรหมโชติ</option>
             </select>
           </div>
+
+          {/* Quotation Loader — Input Box + Search Button */}
+          <div className="pos-quotation-input-search-wrap">
+            <div className="pos-quotation-field-wrap">
+              <span className="pos-quotation-search-icon">📄</span>
+              <input
+                type="text"
+                className="pos-quotation-search-field"
+                placeholder="ใบเสนอราคา"
+                value={quotationSearchQuery}
+                onChange={(e) => setQuotationSearchQuery(e.target.value)}
+                onFocus={loadQuotationsFromStorage}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleDirectQuotationSearch();
+                  }
+                }}
+              />
+              {quotationSearchQuery && (
+                <button 
+                  className="pos-quotation-clear-btn" 
+                  onClick={() => setQuotationSearchQuery('')}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <button
+              className="pos-quotation-search-btn"
+              onClick={() => {
+                loadQuotationsFromStorage();
+                setShowQuotationModal(true);
+              }}
+              title="ค้นหาใบเสนอราคา"
+            >
+              🔍 ค้นหา
+            </button>
+          </div>
         </div>
+
+        {/* ====== Quotation Search Modal ====== */}
+        {showQuotationModal && (
+          <div className="qt-modal-overlay" onClick={() => setShowQuotationModal(false)}>
+            <div className="qt-modal-box" onClick={e => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="qt-modal-header">
+                <div>
+                  <h3 className="qt-modal-title">📄 เลือกใบเสนอราคา</h3>
+                  <p className="qt-modal-subtitle">ค้นหาจาก เลขที่ใบเสนอ, ชื่อบริษัท/ลูกค้า หรือ เบอร์โทร</p>
+                </div>
+                <button className="qt-modal-close" onClick={() => setShowQuotationModal(false)}>✕</button>
+              </div>
+
+              {/* Search Input inside modal */}
+              <div className="qt-search-wrap">
+                <span className="qt-search-icon">🔍</span>
+                <input
+                  className="qt-search-input"
+                  type="text"
+                  placeholder="พิมพ์เลขที่ใบเสนอ เช่น QT6907... หรือ ชื่อลูกค้า หรือ เบอร์โทร..."
+                  value={quotationSearchQuery}
+                  onChange={e => setQuotationSearchQuery(e.target.value)}
+                  autoFocus
+                />
+                {quotationSearchQuery && (
+                  <button className="qt-clear-btn" onClick={() => setQuotationSearchQuery('')}>✕</button>
+                )}
+              </div>
+
+              {/* Results DataGridView */}
+              <div className="qt-grid-viewport">
+                {filteredQuotations.length === 0 ? (
+                  <div className="qt-no-results">
+                    <span style={{ fontSize: '2.5rem' }}>🗂️</span>
+                    <p>{quotationSearchQuery ? 'ไม่พบใบเสนอราคาที่ค้นหา' : 'ยังไม่มีใบเสนอราคาที่บันทึกไว้'}</p>
+                  </div>
+                ) : (
+                  <table className="qt-datagrid">
+                    <thead>
+                      <tr>
+                        <th>เลขที่ใบเสนอ</th>
+                        <th>วันที่ออกเอกสาร</th>
+                        <th>ประเภท</th>
+                        <th>ชื่อลูกค้า/บริษัท</th>
+                        <th>เบอร์โทรศัพท์</th>
+                        <th>รายการเครื่องจักร/สินค้า</th>
+                        <th>ยอดรวมสุทธิ</th>
+                        <th style={{ textAlign: 'center' }}>การจัดการ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredQuotations.map(q => {
+                        const tot = q.total || 0;
+                        const itemCount = q.items?.length || 0;
+                        const dateDisplay = q.date
+                          ? new Date(q.date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                          : '-';
+                        const itemsText = (q.items || []).map(item => `${item.name} (${item.quantity} ${item.unit || 'เครื่อง'})`).join(', ');
+                        return (
+                          <tr key={q.id} onClick={() => handleLoadFromQuotation(q)}>
+                            <td className="qt-col-id">{q.id}</td>
+                            <td>{dateDisplay}</td>
+                            <td>
+                              <span className={`qt-badge-type ${q.customerType}`}>
+                                {q.customerType === 'company' ? '🏢 บริษัท' : '👤 บุคคล'}
+                              </span>
+                            </td>
+                            <td className="qt-col-customer" title={q.customerName}>{q.customerName}</td>
+                            <td>{q.customerPhone || '-'}</td>
+                            <td className="qt-col-items" title={itemsText}>{itemsText}</td>
+                            <td className="qt-col-total">฿{tot.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</td>
+                            <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                              <button className="qt-load-btn" onClick={() => handleLoadFromQuotation(q)}>
+                                โหลด →
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="qt-modal-footer">
+                <span className="qt-count-text">พบ {filteredQuotations.length} รายการ จากทั้งหมด {savedQuotations.length} ใบ</span>
+                <button className="qt-cancel-btn" onClick={() => setShowQuotationModal(false)}>ปิด</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Category Dropdown */}
         <div className="pos-categories-dropdown" style={{ marginBottom: '16px' }}>
@@ -623,26 +881,33 @@ const POS = () => {
                   </div>
                 </div>
                 <div className="product-price-wrapper">
-                  <span className="product-price-cost">
-                    ทุน: ฿{(product.costPrice || 0).toLocaleString()}
-                  </span>
-                  <span className="product-price-branch">
-                    สาขา: ฿{product.branchPrice?.toLocaleString() || product.sellPrice?.toLocaleString()}
-                  </span>
-                  <span className="product-price-sell">
-                    ขาย: ฿{product.sellPrice.toLocaleString()}
-                  </span>
-                  <span
-                    className={`product-stock ${
-                      product.stock <= 10 && product.stock > 0
-                        ? 'low-stock'
-                        : ''
-                    }`}
-                  >
-                    {product.stock <= 0
-                      ? 'สินค้าหมด'
-                      : `คงเหลือ: ${product.stock}`}
-                  </span>
+                  <div className="price-badge-container">
+                    <div className="price-badge cost" title="ราคาทุน">
+                      <span className="price-label">ทุน</span>
+                      <span className="price-val">฿{(product.costPrice || 0).toLocaleString('th-TH')}</span>
+                    </div>
+                    <div className="price-badge branch" title="ราคาสาขา">
+                      <span className="price-label">สาขา</span>
+                      <span className="price-val">฿{(product.branchPrice || product.sellPrice || 0).toLocaleString('th-TH')}</span>
+                    </div>
+                    <div className="price-badge sell" title="ราคาขาย">
+                      <span className="price-label">ขาย</span>
+                      <span className="price-val">฿{(product.sellPrice || 0).toLocaleString('th-TH')}</span>
+                    </div>
+                  </div>
+                  <div className="stock-container">
+                    <span
+                      className={`product-stock ${
+                        product.stock <= 10 && product.stock > 0
+                          ? 'low-stock'
+                          : ''
+                      }`}
+                    >
+                      {product.stock <= 0
+                        ? 'หมด'
+                        : `คงเหลือ: ${product.stock}`}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))

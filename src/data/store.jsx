@@ -139,15 +139,55 @@ function storeReducer(state, action) {
       return { ...state, customers: action.payload };
 
     case ACTIONS.ADD_CUSTOMER:
-      return { ...state, customers: [...state.customers, action.payload] };
+      {
+        const c = action.payload;
+        const nameLower = (c.name || '').toLowerCase();
+        const cleanTax = (c.taxId || '').replace(/-/g, '').trim();
+        const isComp = nameLower.includes('บริษัท') || 
+                       nameLower.includes('บจก') || 
+                       nameLower.includes('หจก') || 
+                       nameLower.includes('ห้างหุ้นส่วน') || 
+                       nameLower.includes('จำกัด') || 
+                       nameLower.includes('co.,ltd') || 
+                       nameLower.includes('corp') ||
+                       (cleanTax.length === 13 && cleanTax !== '-');
+        const customerWithFields = {
+          ...c,
+          phone: c.phone || '-',
+          address: c.address || '-',
+          taxId: c.taxId || '-',
+          type: isComp ? 'company' : 'general'
+        };
+        return { ...state, customers: [...state.customers, customerWithFields] };
+      }
 
     case ACTIONS.UPDATE_CUSTOMER:
-      return {
-        ...state,
-        customers: state.customers.map((c) =>
-          c.id === action.payload.id ? { ...c, ...action.payload } : c
-        ),
-      };
+      {
+        const c = action.payload;
+        const nameLower = (c.name || '').toLowerCase();
+        const cleanTax = (c.taxId || '').replace(/-/g, '').trim();
+        const isComp = nameLower.includes('บริษัท') || 
+                       nameLower.includes('บจก') || 
+                       nameLower.includes('หจก') || 
+                       nameLower.includes('ห้างหุ้นส่วน') || 
+                       nameLower.includes('จำกัด') || 
+                       nameLower.includes('co.,ltd') || 
+                       nameLower.includes('corp') ||
+                       (cleanTax.length === 13 && cleanTax !== '-');
+        const customerWithFields = {
+          ...c,
+          phone: c.phone || '-',
+          address: c.address || '-',
+          taxId: c.taxId || '-',
+          type: isComp ? 'company' : 'general'
+        };
+        return {
+          ...state,
+          customers: state.customers.map((existing) =>
+            existing.id === c.id ? { ...existing, ...customerWithFields } : existing
+          ),
+        };
+      }
 
     case ACTIONS.DELETE_CUSTOMER:
       return {
@@ -299,13 +339,26 @@ export function StoreProvider({ children }) {
       }));
 
       // Map customers
-      const mappedCustomers = (dbCustomers || []).map(row => ({
-        id: row.id,
-        name: row.name,
-        phone: row.phone || '-',
-        address: row.address || '-',
-        taxId: row.tax_id || '-'
-      }));
+      const mappedCustomers = (dbCustomers || []).map(row => {
+        const nameLower = (row.name || '').toLowerCase();
+        const cleanTax = (row.tax_id || '').replace(/-/g, '').trim();
+        const isComp = nameLower.includes('บริษัท') || 
+                       nameLower.includes('บจก') || 
+                       nameLower.includes('หจก') || 
+                       nameLower.includes('ห้างหุ้นส่วน') || 
+                       nameLower.includes('จำกัด') || 
+                       nameLower.includes('co.,ltd') || 
+                       nameLower.includes('corp') ||
+                       (cleanTax.length === 13 && cleanTax !== '-');
+        return {
+          id: row.id,
+          name: row.name,
+          phone: row.phone || '-',
+          address: row.address || '-',
+          taxId: row.tax_id || '-',
+          type: isComp ? 'company' : 'general'
+        };
+      });
 
       // Map promotions
       const mappedPromotions = (dbPromotions || []).map(row => ({
