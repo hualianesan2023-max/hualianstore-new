@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../data/store';
 import logoImg from '../assets/logo.png';
 import './Quotation.css';
@@ -110,9 +110,9 @@ const formatCurrency = (amount) => {
 };
 
 const Quotation = () => {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const store = state?.storeInfo || {
-    name: 'ห้างหุ้นส่วนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.',
+    name: 'ห้างลงทุนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.',
     address: 'สำนักงานใหญ่ : 841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000',
     phone: '044-002716 , 084-1844310 (บัญชี) แฟ็ก. 044-248869',
     taxId: '0303547004494',
@@ -120,8 +120,7 @@ const Quotation = () => {
   };
   const currentUser = state?.currentUser;
 
-  // Local storage quotations list
-  const [quotations, setQuotations] = useState([]);
+  const quotations = state?.quotations || [];
   const [activeTab, setActiveTab] = useState('history'); // history | create
   
   // Search & filter states
@@ -158,24 +157,6 @@ const Quotation = () => {
 
   // Preview state
   const [previewQuotation, setPreviewQuotation] = useState(null);
-
-  // Load quotations list
-  useEffect(() => {
-    const saved = localStorage.getItem('pos_quotations');
-    if (saved) {
-      try {
-        setQuotations(JSON.parse(saved));
-      } catch (err) {
-        console.error('Error parsing quotations:', err);
-      }
-    }
-  }, []);
-
-  // Sync to local storage
-  const saveToLocalStorage = (newList) => {
-    setQuotations(newList);
-    localStorage.setItem('pos_quotations', JSON.stringify(newList));
-  };
 
   // Generate Quotation Number
   const generateQuotationNo = (dateStr) => {
@@ -403,21 +384,16 @@ const Quotation = () => {
       items
     };
 
-    let updatedList = [];
     if (editId) {
-      // Edit existing
-      updatedList = quotations.map(q => q.id === editId ? newQuotation : q);
+      dispatch({ type: 'UPDATE_QUOTATION', payload: { ...newQuotation, id: editId } });
     } else {
-      // Add new
-      // Check duplicate Quotation ID
       const dup = quotations.some(q => q.id === newQuotation.id);
       if (dup) {
         newQuotation.id = generateQuotationNo(quotationDate);
       }
-      updatedList = [newQuotation, ...quotations];
+      dispatch({ type: 'ADD_QUOTATION', payload: newQuotation });
     }
 
-    saveToLocalStorage(updatedList);
     setEditId(null);
     setActiveTab('history');
   };
@@ -447,8 +423,7 @@ const Quotation = () => {
   // Delete Quotation
   const handleDeleteQuotation = (id) => {
     if (window.confirm(`ต้องการลบใบเสนอราคาเลขที่ ${id} ใช่หรือไม่?`)) {
-      const newList = quotations.filter(q => q.id !== id);
-      saveToLocalStorage(newList);
+      dispatch({ type: 'DELETE_QUOTATION', payload: id });
     }
   };
 
@@ -603,6 +578,8 @@ const Quotation = () => {
               <h2 className="section-title">
                 <span>👤</span> ข้อมูลลูกค้าและข้อกำหนดเอกสาร
               </h2>
+
+
 
               {/* Customer Type Selector */}
               <div className="form-group">
@@ -1159,6 +1136,91 @@ const Quotation = () => {
         />
       )}
 
+      {/* FULL SCREEN MODAL: CUSTOMER SEARCH */}
+      {/* ──────────────────────────────────────────────────────── */}
+      {showCustomerSearchModal && (
+        <div className="cust-modal-overlay" onClick={() => setShowCustomerSearchModal(false)}>
+          <div className="cust-modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="cust-modal-header">
+              <div className="cust-modal-title">
+                <span>👥</span>
+                <span>ค้นหาและเลือกลูกค้า</span>
+                <span className="cust-modal-count">
+                  {filteredCustomersInModal.length} / {(state.customers || []).length} รายการ
+                </span>
+              </div>
+              <button type="button" className="cust-modal-close" onClick={() => setShowCustomerSearchModal(false)}>✕ ปิด</button>
+            </div>
+            <div className="cust-modal-search-bar">
+              <div className="cust-modal-search-input-wrap">
+                <span className="cust-modal-search-icon">🔍</span>
+                <input
+                  type="text"
+                  autoFocus
+                  className="cust-modal-search-input"
+                  placeholder="ค้นหาชื่อ, บริษัท, เบอร์โทร หรือ TAX ID..."
+                  value={customerModalQuery}
+                  onChange={(e) => setCustomerModalQuery(e.target.value)}
+                />
+                {customerModalQuery && (
+                  <button type="button" className="cust-modal-clear-btn" onClick={() => setCustomerModalQuery('')}>✕</button>
+                )}
+              </div>
+              <div className="cust-modal-type-tabs">
+                <button type="button" className={`cust-type-tab ${customerTypeFilter === 'all' ? 'active' : ''}`} onClick={() => setCustomerTypeFilter('all')}>👥 ทั้งหมด</button>
+                <button type="button" className={`cust-type-tab ${customerTypeFilter === 'general' ? 'active' : ''}`} onClick={() => setCustomerTypeFilter('general')}>👤 บุคคลธรรมดา</button>
+                <button type="button" className={`cust-type-tab ${customerTypeFilter === 'company' ? 'active' : ''}`} onClick={() => setCustomerTypeFilter('company')}>🏢 บริษัท/ห้างร้าน</button>
+              </div>
+            </div>
+            <div className="cust-modal-grid-wrapper">
+              {filteredCustomersInModal.length === 0 ? (
+                <div className="cust-modal-empty">
+                  <div className="cust-modal-empty-icon">🔍</div>
+                  <p>ไม่พบลูกค้าที่ตรงกับการค้นหา</p>
+                  <span>ลองเปลี่ยนคำค้นหาหรือตัวกรองประเภทลูกค้า</span>
+                </div>
+              ) : (
+                <table className="cust-datagrid">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '50px' }}>ลำดับ</th>
+                      <th>ชื่อ / บริษัท</th>
+                      <th style={{ width: '130px' }}>เบอร์โทร</th>
+                      <th style={{ width: '140px' }}>TAX ID</th>
+                      <th>ที่อยู่</th>
+                      <th style={{ width: '100px', textAlign: 'center' }}>ประเภท</th>
+                      <th style={{ width: '100px', textAlign: 'center' }}>เลือก</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCustomersInModal.map((cust, idx) => (
+                      <tr key={cust.id} onDoubleClick={() => handleSelectCustomerFromModal(cust)}>
+                        <td className="cust-dg-idx">{idx + 1}</td>
+                        <td className="cust-dg-name"><span className="cust-dg-name-text">{cust.name}</span></td>
+                        <td className="cust-dg-phone">{cust.phone || '-'}</td>
+                        <td className="cust-dg-tax">{cust.taxId || '-'}</td>
+                        <td className="cust-dg-address">{cust.address || '-'}</td>
+                        <td className="cust-dg-type">
+                          <span className={`cust-dg-badge ${cust.type === 'company' ? 'company' : 'personal'}`}>
+                            {cust.type === 'company' ? '🏢 บริษัท' : '👤 บุคคล'}
+                          </span>
+                        </td>
+                        <td className="cust-dg-action">
+                          <button type="button" className="cust-dg-select-btn" onClick={() => handleSelectCustomerFromModal(cust)}>✔ เลือก</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="cust-modal-footer">
+              <span>💡 ดับเบิ้ลคลิกที่แถวเพื่อเลือกลูกค้าได้ทันที</span>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
@@ -1436,94 +1498,8 @@ const QuotationPreviewModal = ({ quotation, store, onClose }) => {
         </div>
 
       </div>
-      {/* โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
-      {/* FULL SCREEN MODAL: CUSTOMER SEARCH */}
-      {/* โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */}
-      {showCustomerSearchModal && (
-        <div className="cust-modal-overlay" onClick={() => setShowCustomerSearchModal(false)}>
-          <div className="cust-modal-container" onClick={(e) => e.stopPropagation()}>
-            <div className="cust-modal-header">
-              <div className="cust-modal-title">
-                <span>๐‘ฅ</span>
-                <span>เธเนเธเธซเธฒเนเธฅเธฐเน€เธฅเธทเธญเธเธฅเธนเธเธเนเธฒ</span>
-                <span className="cust-modal-count">
-                  {filteredCustomersInModal.length} / {(state.customers || []).length} เธฃเธฒเธขเธเธฒเธฃ
-                </span>
-              </div>
-              <button type="button" className="cust-modal-close" onClick={() => setShowCustomerSearchModal(false)}>โ• เธเธดเธ”</button>
-            </div>
-            <div className="cust-modal-search-bar">
-              <div className="cust-modal-search-input-wrap">
-                <span className="cust-modal-search-icon">๐”</span>
-                <input
-                  type="text"
-                  autoFocus
-                  className="cust-modal-search-input"
-                  placeholder="เธเนเธเธซเธฒเธเธทเนเธญ, เธเธฃเธดเธฉเธฑเธ—, เน€เธเธญเธฃเนเนเธ—เธฃ เธซเธฃเธทเธญ TAX ID..."
-                  value={customerModalQuery}
-                  onChange={(e) => setCustomerModalQuery(e.target.value)}
-                />
-                {customerModalQuery && (
-                  <button type="button" className="cust-modal-clear-btn" onClick={() => setCustomerModalQuery('')}>โ•</button>
-                )}
-              </div>
-              <div className="cust-modal-type-tabs">
-                <button type="button" className={cust-type-tab } onClick={() => setCustomerTypeFilter('all')}>๐‘ฅ เธ—เธฑเนเธเธซเธกเธ”</button>
-                <button type="button" className={cust-type-tab } onClick={() => setCustomerTypeFilter('general')}>๐‘ค เธเธธเธเธเธฅเธเธฃเธฃเธกเธ”เธฒ</button>
-                <button type="button" className={cust-type-tab } onClick={() => setCustomerTypeFilter('company')}>๐ข เธเธฃเธดเธฉเธฑเธ—/เธซเนเธฒเธเธฃเนเธฒเธ</button>
-              </div>
-            </div>
-            <div className="cust-modal-grid-wrapper">
-              {filteredCustomersInModal.length === 0 ? (
-                <div className="cust-modal-empty">
-                  <div className="cust-modal-empty-icon">๐”</div>
-                  <p>เนเธกเนเธเธเธฅเธนเธเธเนเธฒเธ—เธตเนเธ•เธฃเธเธเธฑเธเธเธฒเธฃเธเนเธเธซเธฒ</p>
-                  <span>เธฅเธญเธเน€เธเธฅเธตเนเธขเธเธเธณเธเนเธเธซเธฒเธซเธฃเธทเธญเธ•เธฑเธงเธเธฃเธญเธเธเธฃเธฐเน€เธ เธ—เธฅเธนเธเธเนเธฒ</span>
-                </div>
-              ) : (
-                <table className="cust-datagrid">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '50px' }}>เธฅเธณเธ”เธฑเธ</th>
-                      <th>เธเธทเนเธญ / เธเธฃเธดเธฉเธฑเธ—</th>
-                      <th style={{ width: '130px' }}>เน€เธเธญเธฃเนเนเธ—เธฃ</th>
-                      <th style={{ width: '140px' }}>TAX ID</th>
-                      <th>เธ—เธตเนเธญเธขเธนเน</th>
-                      <th style={{ width: '100px', textAlign: 'center' }}>เธเธฃเธฐเน€เธ เธ—</th>
-                      <th style={{ width: '100px', textAlign: 'center' }}>เน€เธฅเธทเธญเธ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredCustomersInModal.map((cust, idx) => (
-                      <tr key={cust.id} onDoubleClick={() => handleSelectCustomerFromModal(cust)}>
-                        <td className="cust-dg-idx">{idx + 1}</td>
-                        <td className="cust-dg-name"><span className="cust-dg-name-text">{cust.name}</span></td>
-                        <td className="cust-dg-phone">{cust.phone || '-'}</td>
-                        <td className="cust-dg-tax">{cust.taxId || '-'}</td>
-                        <td className="cust-dg-address">{cust.address || '-'}</td>
-                        <td className="cust-dg-type">
-                          <span className={cust-dg-badge }>
-                            {cust.type === 'company' ? '๐ข เธเธฃเธดเธฉเธฑเธ—' : '๐‘ค เธเธธเธเธเธฅ'}
-                          </span>
-                        </td>
-                        <td className="cust-dg-action">
-                          <button type="button" className="cust-dg-select-btn" onClick={() => handleSelectCustomerFromModal(cust)}>โ” เน€เธฅเธทเธญเธ</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-            <div className="cust-modal-footer">
-              <span>๐’ก เธ”เธฑเธเน€เธเธดเนเธฅเธเธฅเธดเธเธ—เธตเนเนเธ–เธงเน€เธเธทเนเธญเน€เธฅเธทเธญเธเธฅเธนเธเธเนเธฒเนเธ”เนเธ—เธฑเธเธ—เธต</span>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* ──────────────────────────────────────────────────────── */}
     </div>
   );
 };
-
 export default Quotation;

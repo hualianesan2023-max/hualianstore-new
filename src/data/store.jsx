@@ -31,6 +31,10 @@ export const ACTIONS = {
   UPDATE_USER: 'UPDATE_USER',
   DELETE_USER: 'DELETE_USER',
   SET_USERS: 'SET_USERS',
+  SET_QUOTATIONS: 'SET_QUOTATIONS',
+  ADD_QUOTATION: 'ADD_QUOTATION',
+  UPDATE_QUOTATION: 'UPDATE_QUOTATION',
+  DELETE_QUOTATION: 'DELETE_QUOTATION',
 };
 
 const STORAGE_KEY = 'pos_store_state';
@@ -64,6 +68,7 @@ function loadInitialState() {
     categories: [],
     branches: [{ id: 'main', name: 'สำนักงานใหญ่ (นครราชสีมา)' }],
     customers: [],
+    quotations: [],
     currentUser,
     users: [],
   };
@@ -215,6 +220,26 @@ function storeReducer(state, action) {
         users: state.users.filter((u) => u.id !== action.payload),
       };
 
+    case ACTIONS.SET_QUOTATIONS:
+      return { ...state, quotations: action.payload };
+
+    case ACTIONS.ADD_QUOTATION:
+      return { ...state, quotations: [action.payload, ...state.quotations] };
+
+    case ACTIONS.UPDATE_QUOTATION:
+      return {
+        ...state,
+        quotations: state.quotations.map((q) =>
+          q.id === action.payload.id ? { ...q, ...action.payload } : q
+        ),
+      };
+
+    case ACTIONS.DELETE_QUOTATION:
+      return {
+        ...state,
+        quotations: state.quotations.filter((q) => q.id !== action.payload),
+      };
+
     default:
       return state;
   }
@@ -319,6 +344,19 @@ export function StoreProvider({ children }) {
         .select('*');
       if (itemsErr) throw itemsErr;
 
+      // 8. Fetch quotations
+      const { data: dbQuotations, error: quotErr } = await supabase
+        .from('quotations')
+        .select('*')
+        .order('date', { ascending: false });
+      if (quotErr) throw quotErr;
+
+      // 9. Fetch quotation_items
+      const { data: dbQuotationItems, error: quotItemsErr } = await supabase
+        .from('quotation_items')
+        .select('*');
+      if (quotItemsErr) throw quotItemsErr;
+
       // Map products (Snake Case -> Camel Case)
       const mappedProducts = (dbProducts || []).map(row => ({
         id: row.id,
@@ -338,8 +376,32 @@ export function StoreProvider({ children }) {
         isPopular: !!row.is_popular
       }));
 
-      // Map customers
-      const mappedCustomers = (dbCustomers || []).map(row => {
+      // Map customers (Fallback to mock customers if database is empty or fails)
+      const rawCustomers = (dbCustomers && dbCustomers.length > 0) ? dbCustomers : [
+        {
+          id: 'XL-00001',
+          name: 'บริษัท ทีเค แพ็ค จำกัด',
+          phone: '0833748061',
+          address: '981/89-90 ถนนบางขุนเทียน-ชายทะเล แขวงแสมดำ เขตบางขุนเทียน กรุงเทพมหานคร 10150',
+          tax_id: '0105554116298'
+        },
+        {
+          id: 'XL-00002',
+          name: 'สมชาย ดีเลิศ',
+          phone: '081-234-5678',
+          address: '123/45 ถ.พหลโยธิน แขวงสามเสนใน เขตพญาไท กรุงเทพฯ 10400',
+          tax_id: '1234567890123'
+        },
+        {
+          id: 'XL-00003',
+          name: 'บริษัท หัวเหรียญ จำกัด (สำนักงานใหญ่)',
+          phone: '044-002716',
+          address: '841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000',
+          tax_id: '0303547004494'
+        }
+      ];
+
+      const mappedCustomers = rawCustomers.map(row => {
         const nameLower = (row.name || '').toLowerCase();
         const cleanTax = (row.tax_id || '').replace(/-/g, '').trim();
         const isComp = nameLower.includes('บริษัท') || 
@@ -426,6 +488,96 @@ export function StoreProvider({ children }) {
         taxRate: Number(dbStoreInfo.tax_rate || 7)
       } : {};
 
+      // Group quotation items by quotation_id
+      const itemsByQuotationId = (dbQuotationItems || []).reduce((acc, item) => {
+        if (!acc[item.quotation_id]) acc[item.quotation_id] = [];
+        acc[item.quotation_id].push({
+          productId: item.product_id,
+          name: item.product_name,
+          quantity: Number(item.quantity || 1),
+          sellPrice: Number(item.sell_price || 0),
+          unit: item.unit || 'เครื่อง'
+        });
+        return acc;
+      }, {});
+
+      // Map quotations
+      const mappedQuotations = (dbQuotations || []).map(q => ({
+        id: q.id,
+        date: q.date,
+        customerType: q.customer_type || 'general',
+        customerId: q.customer_id,
+        customerName: q.customer_name,
+        customerPhone: q.customer_phone || '',
+        customerAddress: q.customer_address || '',
+        customerTaxId: q.customer_tax_id || '',
+        companyBranch: q.company_branch || 'สำนักงานใหญ่',
+        validityDays: q.validity_days || '30 วัน',
+        deliveryDays: q.delivery_days || '7 วัน',
+        paymentTerms: q.payment_terms || 'โอนเงินเข้าบัญชี',
+        salesperson: q.salesperson || '',
+        discountAmount: Number(q.discount_amount || 0),
+        vatType: q.vat_type || 'inclusive',
+        subtotal: Number(q.subtotal || 0),
+        tax: Number(q.tax || 0),
+        total: Number(q.total || 0),
+        items: itemsByQuotationId[q.id] || []
+      }));
+
+      // --- MIGRATION: localStorage quotations to Supabase ---
+      let finalQuotations = mappedQuotations;
+      const localQuotationsSaved = localStorage.getItem('pos_quotations');
+      if (localQuotationsSaved) {
+        try {
+          const parsedLocal = JSON.parse(localQuotationsSaved);
+          if (parsedLocal && parsedLocal.length > 0) {
+            console.log('Migrating localStorage quotations to Supabase...', parsedLocal.length);
+            for (const q of parsedLocal) {
+              if (!finalQuotations.some(dbQ => dbQ.id === q.id)) {
+                const { error: insErr } = await supabase.from('quotations').insert({
+                  id: q.id,
+                  date: q.date,
+                  customer_type: q.customerType || 'general',
+                  customer_id: q.customerId || null,
+                  customer_name: q.customerName,
+                  customer_phone: q.customerPhone || null,
+                  customer_address: q.customerAddress || null,
+                  customer_tax_id: q.customerTaxId || null,
+                  company_branch: q.companyBranch || null,
+                  validity_days: q.validityDays || null,
+                  delivery_days: q.deliveryDays || null,
+                  payment_terms: q.paymentTerms || null,
+                  salesperson: q.salesperson || null,
+                  discount_amount: Number(q.discountAmount || 0),
+                  vat_type: q.vatType || 'inclusive',
+                  subtotal: Number(q.subtotal || 0),
+                  tax: Number(q.tax || 0),
+                  total: Number(q.total || 0)
+                });
+
+                if (!insErr) {
+                  for (const item of q.items || []) {
+                    await supabase.from('quotation_items').insert({
+                      quotation_id: q.id,
+                      product_id: item.productId,
+                      product_name: item.name,
+                      quantity: Number(item.quantity || 1),
+                      sell_price: Number(item.sellPrice || 0),
+                      unit: item.unit || 'เครื่อง'
+                    });
+                  }
+                  finalQuotations = [q, ...finalQuotations];
+                }
+              }
+            }
+            localStorage.removeItem('pos_quotations');
+            console.log('Migration of quotations completed successfully.');
+          }
+        } catch (migErr) {
+          console.warn('Migration of local quotations failed:', migErr);
+        }
+      }
+
       // Dispatch results to local state store
       dispatch({ type: ACTIONS.SET_PRODUCTS, payload: mappedProducts });
       dispatch({ type: ACTIONS.SET_CATEGORIES, payload: dbCategories || [] });
@@ -433,6 +585,7 @@ export function StoreProvider({ children }) {
       dispatch({ type: ACTIONS.SET_PROMOTIONS, payload: mappedPromotions });
       dispatch({ type: ACTIONS.UPDATE_STORE_INFO, payload: mappedStoreInfo });
       dispatch({ type: ACTIONS.SET_SALES, payload: mappedSales });
+      dispatch({ type: ACTIONS.SET_QUOTATIONS, payload: finalQuotations });
 
     } catch (err) {
       console.error('Failed to sync data directly with Supabase database:', err.message);
@@ -699,6 +852,106 @@ export function StoreProvider({ children }) {
         }).eq('id', 'main');
         success = !error;
         if (error) console.error('Update store info error:', error);
+      }
+      else if (action.type === ACTIONS.ADD_QUOTATION) {
+        const q = action.payload;
+        const { error: quotErr } = await supabase.from('quotations').insert({
+          id: q.id,
+          date: q.date,
+          customer_type: q.customerType || 'general',
+          customer_id: q.customerId || null,
+          customer_name: q.customerName,
+          customer_phone: q.customerPhone || null,
+          customer_address: q.customerAddress || null,
+          customer_tax_id: q.customerTaxId || null,
+          company_branch: q.companyBranch || null,
+          validity_days: q.validityDays || null,
+          delivery_days: q.deliveryDays || null,
+          payment_terms: q.paymentTerms || null,
+          salesperson: q.salesperson || null,
+          discount_amount: Number(q.discountAmount || 0),
+          vat_type: q.vatType || 'inclusive',
+          subtotal: Number(q.subtotal || 0),
+          tax: Number(q.tax || 0),
+          total: Number(q.total || 0)
+        });
+
+        if (quotErr) {
+          console.error('Add quotation error:', quotErr);
+          success = false;
+        } else {
+          for (const item of q.items || []) {
+            const { error: itemErr } = await supabase.from('quotation_items').insert({
+              quotation_id: q.id,
+              product_id: item.productId,
+              product_name: item.name,
+              quantity: Number(item.quantity || 1),
+              sell_price: Number(item.sellPrice || 0),
+              unit: item.unit || 'เครื่อง'
+            });
+            if (itemErr) {
+              console.error('Add quotation item error:', itemErr);
+              success = false;
+              break;
+            }
+          }
+        }
+      }
+      else if (action.type === ACTIONS.UPDATE_QUOTATION) {
+        const q = action.payload;
+        const { error: quotErr } = await supabase.from('quotations').update({
+          date: q.date,
+          customer_type: q.customerType || 'general',
+          customer_id: q.customerId || null,
+          customer_name: q.customerName,
+          customer_phone: q.customerPhone || null,
+          customer_address: q.customerAddress || null,
+          customer_tax_id: q.customerTaxId || null,
+          company_branch: q.companyBranch || null,
+          validity_days: q.validityDays || null,
+          delivery_days: q.deliveryDays || null,
+          payment_terms: q.paymentTerms || null,
+          salesperson: q.salesperson || null,
+          discount_amount: Number(q.discountAmount || 0),
+          vat_type: q.vatType || 'inclusive',
+          subtotal: Number(q.subtotal || 0),
+          tax: Number(q.tax || 0),
+          total: Number(q.total || 0)
+        }).eq('id', q.id);
+
+        if (quotErr) {
+          console.error('Update quotation error:', quotErr);
+          success = false;
+        } else {
+          const { error: delErr } = await supabase.from('quotation_items').delete().eq('quotation_id', q.id);
+          if (delErr) {
+            console.error('Delete old quotation items error:', delErr);
+            success = false;
+          } else {
+            for (const item of q.items || []) {
+              const { error: itemErr } = await supabase.from('quotation_items').insert({
+                quotation_id: q.id,
+                product_id: item.productId,
+                product_name: item.name,
+                quantity: Number(item.quantity || 1),
+                sell_price: Number(item.sellPrice || 0),
+                unit: item.unit || 'เครื่อง'
+              });
+              if (itemErr) {
+                console.error('Add quotation item error:', itemErr);
+                success = false;
+                break;
+              }
+            }
+          }
+        }
+      }
+      else if (action.type === ACTIONS.DELETE_QUOTATION) {
+        const { error: delErr } = await supabase.from('quotations').delete().eq('id', action.payload);
+        if (delErr) {
+          console.error('Delete quotation error:', delErr);
+          success = false;
+        }
       }
 
       // If the write to Supabase was successful, refresh client data from database
