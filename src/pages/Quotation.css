@@ -1203,8 +1203,11 @@ textarea.form-input {
     visibility: hidden;
   }
 
-  .quotation-print-paper, .quotation-print-paper * {
-    visibility: visible;
+  .quotation-modal-overlay,
+  .quotation-modal-overlay *,
+  .quotation-print-paper,
+  .quotation-print-paper * {
+    visibility: visible !important;
   }
 
   /* Force absolute positions for print */
@@ -1267,11 +1270,22 @@ textarea.form-input {
     display: none !important;
   }
 
-  /* Hide parent layouts entirely */
-  .app-container,
+  /* Reset parent layouts for printing without hiding them */
+  body, html, #root, .app-container, .main-content, .quotation-page {
+    display: block !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+
+  /* Hide screen-only siblings */
   .sidebar,
-  .main-content,
-  .quotation-page {
+  .quotation-header,
+  .quotation-page > div:not(.quotation-modal-overlay) {
     display: none !important;
   }
 

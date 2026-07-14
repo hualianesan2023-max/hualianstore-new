@@ -10,12 +10,64 @@ import Customers from './pages/Customers';
 import ProfitLoss from './pages/ProfitLoss';
 import Users from './pages/Users';
 import Quotation from './pages/Quotation';
+import { showAlert } from './utils/alerts';
 import './App.css';
 
 function AppContent() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const currentUser = state?.currentUser;
+
+  // Inactivity timeout handler (30 minutes)
+  React.useEffect(() => {
+    if (!currentUser) return;
+
+    let timeoutId;
+    const timeoutDuration = 30 * 60 * 1000; // 30 minutes
+
+    const resetTimer = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      timeoutId = setTimeout(handleLogout, timeoutDuration);
+    };
+
+    const handleLogout = () => {
+      dispatch({ type: 'LOGOUT_USER' });
+      showAlert(
+        'หมดเวลาการใช้งาน',
+        'ระบบทำการออกจากระบบอัตโนมัติเนื่องจากไม่มีการเคลื่อนไหวเป็นเวลา 30 นาที',
+        'info'
+      );
+    };
+
+    // Events to monitor for activity
+    const activityEvents = [
+      'mousedown',
+      'mousemove',
+      'keypress',
+      'scroll',
+      'touchstart'
+    ];
+
+    // Add listeners
+    activityEvents.forEach((event) => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    // Start timer initially
+    resetTimer();
+
+    // Cleanup listeners and timer
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      activityEvents.forEach((event) => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [currentUser, dispatch]);
 
   if (!currentUser) {
     return <Login />;

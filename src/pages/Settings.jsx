@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../data/store';
 import './Settings.css';
+import { showAlert, showConfirm } from '../utils/alerts';
 
 const Settings = () => {
   const { state, dispatch, resetToDefaults } = useStore();
@@ -84,8 +85,14 @@ const Settings = () => {
   };
 
   // Handle delete promotion
-  const handleDeletePromo = (promoId) => {
-    if (window.confirm('คุณแน่ใจที่จะลบโปรโมชั่นนี้?')) {
+  const handleDeletePromo = async (promoId) => {
+    const confirmed = await showConfirm(
+      'คุณแน่ใจที่จะลบโปรโมชั่นนี้?',
+      'ข้อมูลโปรโมชั่นจะถูกลบออกจากระบบอย่างถาวร',
+      'ใช่, ลบเลย',
+      'ยกเลิก'
+    );
+    if (confirmed) {
       dispatch({
         type: 'DELETE_PROMO',
         payload: promoId,
@@ -95,8 +102,14 @@ const Settings = () => {
   };
 
   // Handle reset system to defaults
-  const handleResetSystem = () => {
-    if (window.confirm('⚠️ คำเตือน: คุณต้องการรีเซ็ตข้อมูลทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่? ข้อมูลการขายและสินค้าที่คุณเพิ่มจะถูกเปลี่ยนกลับทั้งหมด!')) {
+  const handleResetSystem = async () => {
+    const confirmed = await showConfirm(
+      'คุณต้องการรีเซ็ตข้อมูลทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่?',
+      '⚠️ คำเตือน: ข้อมูลการขายและสินค้าที่คุณเพิ่มจะถูกเปลี่ยนกลับทั้งหมดและไม่สามารถกู้คืนได้!',
+      'ใช่, รีเซ็ตเลย',
+      'ยกเลิก'
+    );
+    if (confirmed) {
       resetToDefaults();
       // Reload page to re-fill form states
       window.location.reload();

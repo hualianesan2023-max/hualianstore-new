@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import './ProfitLoss.css';
 import Receipt from '../components/Receipt';
+import { showAlert, showConfirm } from '../utils/alerts';
 
 // ─── Custom Tooltip for Chart ───────────────────────────────────────
 const ProfitTooltip = ({ active, payload, label }) => {

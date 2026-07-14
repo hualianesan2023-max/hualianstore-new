@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useStore } from '../data/store';
 import './Users.css';
 import { supabase } from '../data/supabaseClient';
+import { showAlert, showConfirm } from '../utils/alerts';
 
 const Users = () => {
   const { state, dispatch } = useStore();
@@ -95,7 +96,7 @@ const Users = () => {
 
     const usernameTrim = form.username.trim().toLowerCase();
     if (!usernameTrim || !form.password.trim() || !form.name.trim()) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+      showAlert('กรุณากรอกข้อมูลให้ครบถ้วน', '', 'warning');
       return;
     }
 
@@ -105,7 +106,7 @@ const Users = () => {
     );
 
     if (isDuplicate) {
-      alert('❌ ชื่อผู้ใช้งานนี้มีอยู่ในระบบแล้ว กรุณาใช้ชื่ออื่น');
+      showAlert('ชื่อผู้ใช้งานนี้มีอยู่ในระบบแล้ว กรุณาใช้ชื่ออื่น', '', 'error');
       return;
     }
 
@@ -161,17 +162,23 @@ const Users = () => {
   const handleDelete = async (id, usernameVal, nameVal) => {
     // Prevent deleting primary admin account
     if (usernameVal.toLowerCase() === 'admin') {
-      alert('❌ ไม่สามารถลบบัญชีหลัก "admin" ได้ เพื่อความปลอดภัยของระบบ');
+      showAlert('ไม่สามารถลบบัญชีหลัก "admin" ได้ เพื่อความปลอดภัยของระบบ', '', 'error');
       return;
     }
 
     // Prevent self-deletion
     if (currentUser && currentUser.username === usernameVal) {
-      alert('❌ ไม่สามารถลบบัญชีที่คุณกำลังใช้งานอยู่ในขณะนี้ได้');
+      showAlert('ไม่สามารถลบบัญชีที่คุณกำลังใช้งานอยู่ในขณะนี้ได้', '', 'error');
       return;
     }
 
-    if (window.confirm(`คุณต้องการลบผู้ใช้งาน "${nameVal} (${usernameVal})" ใช่หรือไม่?`)) {
+    const confirmed = await showConfirm(
+      `คุณต้องการลบผู้ใช้งาน "${nameVal} (${usernameVal})" ใช่หรือไม่?`,
+      'ข้อมูลบัญชีผู้ใช้จะถูกลบออกจากระบบอย่างถาวร',
+      'ใช่, ลบเลย',
+      'ยกเลิก'
+    );
+    if (confirmed) {
       await dispatch({
         type: 'DELETE_USER',
         payload: id,

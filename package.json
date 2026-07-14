@@ -20,7 +20,8 @@
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.17.0",
     "recharts": "^3.8.1",
-    "serverless-http": "^4.0.0"
+    "serverless-http": "^4.0.0",
+    "sweetalert2": "^11.26.25"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

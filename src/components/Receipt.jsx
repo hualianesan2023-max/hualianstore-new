@@ -163,7 +163,8 @@ const Receipt = ({ sale, onClose }) => {
   const discountAmount = sale.discountAmount ?? sale.discount ?? 0;
   const tax = sale.tax ?? 0;
   const shippingCost = sale.shippingCost ?? 0;
-  const total = sale.total ?? (subtotal - discountAmount + tax + shippingCost);
+  const installationCost = sale.installationCost ?? 0;
+  const total = sale.total ?? (subtotal - discountAmount + tax + shippingCost + installationCost);
   const cashReceived = sale.cashReceived ?? 0;
   
   // Remaining Balance (ยอดคงเหลือสุทธิ) in reference image is 260,000 when total is 860,000 and paid is 600,000.
@@ -359,6 +360,18 @@ const Receipt = ({ sale, onClose }) => {
                   <span className="calc-label font-bold">ภาษีมูลค่าเพิ่ม 7 %</span>
                   <span className="calc-val">{tax > 0 ? formatCurrency(tax) : '-'}</span>
                 </div>
+                {shippingCost > 0 && (
+                  <div className="calc-row border-top">
+                    <span className="calc-label font-bold">ค่าจัดส่ง</span>
+                    <span className="calc-val">{formatCurrency(shippingCost)}</span>
+                  </div>
+                )}
+                {installationCost > 0 && (
+                  <div className="calc-row border-top">
+                    <span className="calc-label font-bold">ค่าติดตั้ง</span>
+                    <span className="calc-val">{formatCurrency(installationCost)}</span>
+                  </div>
+                )}
                 {discountAmount > 0 && (
                   <div className="calc-row border-top">
                     <span className="calc-label font-bold">ส่วนลดพิเศษ</span>

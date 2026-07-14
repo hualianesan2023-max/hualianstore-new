@@ -1314,3 +1314,69 @@ th.sortable:hover {
     padding: var(--space-sm);
   }
 }
+
+/* ======================================================== */
+/* CUSTOM SWEETALERT2 STYLING                              */
+/* ======================================================== */
+.swal2-custom-popup {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-lg) !important;
+  font-family: var(--font-family) !important;
+  padding: var(--space-xl) !important;
+  box-shadow: var(--shadow-lg) !important;
+  color: var(--text-primary) !important;
+}
+
+.swal2-custom-title {
+  color: var(--text-primary) !important;
+  font-size: var(--font-2xl) !important;
+  font-weight: 600 !important;
+  margin-bottom: var(--space-md) !important;
+}
+
+.swal2-custom-html {
+  color: var(--text-secondary) !important;
+  font-size: var(--font-base) !important;
+  margin-bottom: var(--space-xl) !important;
+}
+
+.swal2-custom-confirm-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 10px 24px !important;
+  font-size: var(--font-sm) !important;
+  font-weight: 600 !important;
+  border-radius: var(--radius-md) !important;
+  background-color: var(--accent-secondary) !important;
+  color: #ffffff !important;
+  border: none !important;
+  cursor: pointer !important;
+  margin: 0 var(--space-xs) !important;
+  transition: background-color var(--transition-fast) !important;
+}
+
+.swal2-custom-confirm-btn:hover {
+  background-color: var(--accent-secondary-hover) !important;
+}
+
+.swal2-custom-cancel-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 10px 24px !important;
+  font-size: var(--font-sm) !important;
+  font-weight: 600 !important;
+  border-radius: var(--radius-md) !important;
+  background-color: var(--danger) !important;
+  color: #ffffff !important;
+  border: none !important;
+  cursor: pointer !important;
+  margin: 0 var(--space-xs) !important;
+  transition: background-color var(--transition-fast) !important;
+}
+
+.swal2-custom-cancel-btn:hover {
+  background-color: var(--danger-hover) !important;
+}

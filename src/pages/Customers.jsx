@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../data/store';
 import './Customers.css';
+import { showAlert, showConfirm } from '../utils/alerts';
 
 const Customers = () => {
   const { state, dispatch } = useStore();
@@ -95,7 +96,7 @@ const Customers = () => {
     e.preventDefault();
 
     if (!form.name.trim() || !form.phone.trim()) {
-      alert('กรุณากรอกชื่อและเบอร์โทรศัพท์');
+      showAlert('กรุณากรอกชื่อและเบอร์โทรศัพท์', '', 'warning');
       return;
     }
 
@@ -126,8 +127,14 @@ const Customers = () => {
   };
 
   // Handle Delete
-  const handleDelete = (id, name) => {
-    if (window.confirm(`คุณต้องการลบลูกค้า "${name}" ใช่หรือไม่?`)) {
+  const handleDelete = async (id, name) => {
+    const confirmed = await showConfirm(
+      `คุณต้องการลบลูกค้า "${name}" ใช่หรือไม่?`,
+      'ข้อมูลของลูกค้าจะถูกลบออกจากฐานข้อมูลอย่างถาวร',
+      'ใช่, ลบเลย',
+      'ยกเลิก'
+    );
+    if (confirmed) {
       dispatch({
         type: 'DELETE_CUSTOMER',
         payload: id,

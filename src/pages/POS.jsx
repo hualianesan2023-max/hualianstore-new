@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore } from '../data/store';
 import Receipt from '../components/Receipt';
 import './POS.css';
+import { showAlert, showConfirm } from '../utils/alerts';
 
 // ===== Generate unique sale ID =====
 const generateSaleId = (existingSales = []) => {
@@ -24,9 +25,18 @@ const generateSaleId = (existingSales = []) => {
     }
   });
 
-  const nextNum = maxNum + 1;
-  const runningStr = String(nextNum).padStart(3, '0'); // e.g. "001"
-  return `${prefix}${runningStr}`;
+  let nextNum = maxNum + 1;
+  let finalId = `${prefix}${String(nextNum).padStart(3, '0')}`;
+  
+  // Resolve collision loop
+  let attempt = 0;
+  while ((existingSales || []).some(s => s.id === finalId) && attempt < 100) {
+    nextNum++;
+    finalId = `${prefix}${String(nextNum).padStart(3, '0')}`;
+    attempt++;
+  }
+  
+  return finalId;
 };
 
 // ===== Toast Component =====
@@ -79,38 +89,24 @@ const POS = () => {
   const [showGeneralCustomerFields, setShowGeneralCustomerFields] = useState(false);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [shippingCost, setShippingCost] = useState('0');
+  const [installationCost, setInstallationCost] = useState('0');
   const [applyVat, setApplyVat] = useState(true);
   const [selectedSalesperson, setSelectedSalesperson] = useState('หน้าร้าน');
   const [globalPriceType, setGlobalPriceType] = useState('sell');
 
   // === Quotation-to-Order ===
-  const [savedQuotations, setSavedQuotations] = useState([]);
+  // === Quotation-to-Order ===
+  const savedQuotations = state?.quotations || [];
   const [quotationSearchQuery, setQuotationSearchQuery] = useState('');
   const [showQuotationModal, setShowQuotationModal] = useState(false);
-
-  // Load quotations from localStorage on mount and whenever input is focused
-  const loadQuotationsFromStorage = () => {
-    const raw = localStorage.getItem('pos_quotations');
-    if (raw) {
-      try { setSavedQuotations(JSON.parse(raw)); } catch (_) {}
-    } else {
-      setSavedQuotations([]);
-    }
-  };
+  const [loadedQuotationId, setLoadedQuotationId] = useState(null);
 
   const handleDirectQuotationSearch = () => {
     const rawQuery = quotationSearchQuery.trim();
     if (!rawQuery) return;
 
-    // Load from storage to get freshest list
-    const raw = localStorage.getItem('pos_quotations');
-    let list = [];
-    if (raw) {
-      try { list = JSON.parse(raw); } catch (_) {}
-    }
-
     // Find exact match (case-insensitive)
-    const matched = list.find(q => q.id && q.id.toLowerCase() === rawQuery.toLowerCase());
+    const matched = savedQuotations.find(q => q.id && q.id.toLowerCase() === rawQuery.toLowerCase());
 
     if (matched) {
       // Map items to cart items
@@ -131,30 +127,48 @@ const POS = () => {
 
       setCart(newCart);
 
-      // Auto-fill customer info
+      // Auto-fill customer info based on quotation customerType
       if (matched.customerName) {
-        setCustomerType('general');
-        setGeneralCustomerName(matched.customerName || '');
-        setGeneralCustomerPhone(matched.customerPhone || '');
-        setGeneralCustomerAddress(matched.customerAddress || '');
-        setShowGeneralCustomerFields(true);
+        if (matched.customerType === 'company') {
+          // บริษัท → ลูกค้าออกใบเสร็จ (selectedCustomer)
+          setCustomerType('receipt');
+          setSelectedCustomer({
+            id: matched.customerId || '',
+            name: matched.customerName || '',
+            phone: matched.customerPhone || '-',
+            address: matched.customerAddress || '-',
+            taxId: matched.customerTaxId || matched.taxId || '-',
+            type: 'company',
+          });
+          setApplyVat(true);
+          setGeneralCustomerName('');
+          setGeneralCustomerPhone('');
+          setGeneralCustomerAddress('');
+          setShowGeneralCustomerFields(false);
+        } else {
+          // บุคคลธรรมดา → ลูกค้าทั่วไป
+          setCustomerType('general');
+          setGeneralCustomerName(matched.customerName || '');
+          setGeneralCustomerPhone(matched.customerPhone || '');
+          setGeneralCustomerAddress(matched.customerAddress || '');
+          setShowGeneralCustomerFields(true);
+          setSelectedCustomer(null);
+        }
       }
 
-      // Delete the quotation from localStorage
-      const updatedList = list.filter(q => q.id !== matched.id);
-      setSavedQuotations(updatedList);
-      localStorage.setItem('pos_quotations', JSON.stringify(updatedList));
+      // Auto-fill fees from quotation
+      setShippingCost(String(matched.shippingCost || 0));
+      setInstallationCost(String(matched.installationCost || 0));
+
+      // Store the loaded quotation ID to delete only upon successful checkout
+      setLoadedQuotationId(matched.id);
 
       setQuotationSearchQuery('');
       showToast(`✅ โหลดใบเสนอราคา ${matched.id} สำเร็จ — ${newCart.length} รายการ`, 'success');
     } else {
-      alert('ไม่มีใบเสนอราคานี้');
+      showAlert('ไม่มีใบเสนอราคานี้', 'กรุณาตรวจสอบเลขที่เอกสารอีกครั้ง', 'warning');
     }
   };
-
-  useEffect(() => {
-    loadQuotationsFromStorage();
-  }, []);
 
   // Load a quotation into the current POS session and delete it from history
   const handleLoadFromQuotation = (quotation) => {
@@ -178,19 +192,41 @@ const POS = () => {
 
     setCart(newCart);
 
-    // Auto-fill customer info
+    // Auto-fill customer info based on quotation customerType
     if (quotation.customerName) {
-      setCustomerType('general');
-      setGeneralCustomerName(quotation.customerName || '');
-      setGeneralCustomerPhone(quotation.customerPhone || '');
-      setGeneralCustomerAddress(quotation.customerAddress || '');
-      setShowGeneralCustomerFields(true);
+      if (quotation.customerType === 'company') {
+        // บริษัท → ลูกค้าออกใบเสร็จ (selectedCustomer)
+        setCustomerType('receipt');
+        setSelectedCustomer({
+          id: quotation.customerId || '',
+          name: quotation.customerName || '',
+          phone: quotation.customerPhone || '-',
+          address: quotation.customerAddress || '-',
+          taxId: quotation.customerTaxId || quotation.taxId || '-',
+          type: 'company',
+        });
+        setApplyVat(true);
+        setGeneralCustomerName('');
+        setGeneralCustomerPhone('');
+        setGeneralCustomerAddress('');
+        setShowGeneralCustomerFields(false);
+      } else {
+        // บุคคลธรรมดา → ลูกค้าทั่วไป
+        setCustomerType('general');
+        setGeneralCustomerName(quotation.customerName || '');
+        setGeneralCustomerPhone(quotation.customerPhone || '');
+        setGeneralCustomerAddress(quotation.customerAddress || '');
+        setShowGeneralCustomerFields(true);
+        setSelectedCustomer(null);
+      }
     }
 
-    // Delete the quotation from localStorage and state
-    const updatedList = savedQuotations.filter(q => q.id !== quotation.id);
-    setSavedQuotations(updatedList);
-    localStorage.setItem('pos_quotations', JSON.stringify(updatedList));
+    // Auto-fill fees from quotation
+    setShippingCost(String(quotation.shippingCost || 0));
+    setInstallationCost(String(quotation.installationCost || 0));
+
+    // Store the loaded quotation ID to delete only upon successful checkout
+    setLoadedQuotationId(quotation.id);
 
     setShowQuotationModal(false);
     showToast(`✅ โหลดใบเสนอราคา ${quotation.id} สำเร็จ — ${newCart.length} รายการ`, 'success');
@@ -488,6 +524,7 @@ const POS = () => {
     setGeneralCustomerAddress('');
     setShowGeneralCustomerFields(false);
     setShippingCost('0');
+    setInstallationCost('0');
     setApplyVat(true);
     setGlobalPriceType('sell');
   }, []);
@@ -530,26 +567,28 @@ const POS = () => {
 
   const afterDiscountCatalog = catalogSubtotal - discountAmount;
   const shippingNum = parseFloat(shippingCost) || 0;
+  const installationNum = parseFloat(installationCost) || 0;
+  const extraFees = shippingNum + installationNum;
 
   let subtotal, tax, total;
 
   if (applyVat) {
     if (isVatInclusive) {
       // VAT Inclusive (Vat ใน)
-      total = Math.round((afterDiscountCatalog + shippingNum) * 100) / 100;
+      total = Math.round((afterDiscountCatalog + extraFees) * 100) / 100;
       subtotal = Math.round((total / 1.07) * 100) / 100;
       tax = Math.round((total - subtotal) * 100) / 100;
     } else {
       // VAT Exclusive (Vat นอก)
       subtotal = afterDiscountCatalog;
       tax = Math.round(subtotal * taxRate * 100) / 100;
-      total = Math.round((subtotal + tax + shippingNum) * 100) / 100;
+      total = Math.round((subtotal + tax + extraFees) * 100) / 100;
     }
   } else {
     // No VAT
     subtotal = afterDiscountCatalog;
     tax = 0;
-    total = Math.round((subtotal + shippingNum) * 100) / 100;
+    total = Math.round((subtotal + extraFees) * 100) / 100;
   }
 
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -589,6 +628,7 @@ const POS = () => {
       discountAmount,
       tax,
       shippingCost: shippingNum,
+      installationCost: installationNum,
       applyVat,
       isVatInclusive,
       total,
@@ -610,6 +650,12 @@ const POS = () => {
     // Dispatch sale
     dispatch({ type: 'ADD_SALE', payload: saleRecord });
 
+    // If this sale was loaded from a quotation, delete the quotation now that it has been paid!
+    if (loadedQuotationId) {
+      dispatch({ type: 'DELETE_QUOTATION', payload: loadedQuotationId });
+      setLoadedQuotationId(null);
+    }
+
     // Show receipt
     setLastSale(saleRecord);
     setShowReceipt(true);
@@ -628,6 +674,8 @@ const POS = () => {
     setGeneralCustomerPhone('');
     setGeneralCustomerAddress('');
     setShowGeneralCustomerFields(false);
+    setShippingCost('0');
+    setInstallationCost('0');
     setSelectedSalesperson('หน้าร้าน');
     setGlobalPriceType('sell');
 
@@ -703,7 +751,6 @@ const POS = () => {
                 placeholder="ใบเสนอราคา"
                 value={quotationSearchQuery}
                 onChange={(e) => setQuotationSearchQuery(e.target.value)}
-                onFocus={loadQuotationsFromStorage}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -723,7 +770,6 @@ const POS = () => {
             <button
               className="pos-quotation-search-btn"
               onClick={() => {
-                loadQuotationsFromStorage();
                 setShowQuotationModal(true);
               }}
               title="ค้นหาใบเสนอราคา"
@@ -1163,11 +1209,11 @@ const POS = () => {
         <div className="cart-bottom">
           {/* Customer Selection */}
           <div className="cart-customer-section" style={{
-            padding: '12px 16px',
+            padding: '8px 12px',
             borderBottom: '1px solid #1e1f2b',
             display: 'flex',
             flexDirection: 'column',
-            gap: '8px'
+            gap: '6px'
           }}>
             {/* Segmented Control */}
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -1224,8 +1270,8 @@ const POS = () => {
               <div style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '6px',
-                marginTop: '4px',
+                gap: '4px',
+                marginTop: '2px',
               }}>
                 <button
                   type="button"
@@ -1260,8 +1306,8 @@ const POS = () => {
                   <div style={{
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '6px',
-                    padding: '10px',
+                    gap: '4px',
+                    padding: '8px',
                     background: '#13141f',
                     border: '1.5px solid #2e303a',
                     borderRadius: '8px',
@@ -1308,12 +1354,12 @@ const POS = () => {
                       rows={2}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
+                        padding: '5px 8px',
                         background: '#1a1b26',
                         border: '1px solid #2e303a',
                         borderRadius: '6px',
                         color: '#f3f4f6',
-                        fontSize: '12.5px',
+                        fontSize: '12px',
                         outline: 'none',
                         resize: 'none',
                         boxSizing: 'border-box',
@@ -1441,25 +1487,49 @@ const POS = () => {
             </div>
           )}
 
-          {/* Shipping and VAT settings */}
+          {/* Shipping, Installation and VAT settings */}
           <div className="cart-shipping-vat" style={{
             display: 'flex',
-            gap: '12px',
-            padding: '12px 16px',
+            gap: '8px',
+            padding: '8px 12px',
             borderBottom: '1px solid #1e1f2b',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexWrap: 'wrap'
           }}>
             {/* Shipping Cost Input */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1', minWidth: '150px' }}>
-              <span style={{ fontSize: '13px', color: '#9ca3af', fontWeight: '500', whiteSpace: 'nowrap' }}>🚚 ค่าจัดส่ง:</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1', minWidth: '130px' }}>
+              <span style={{ fontSize: '13px', color: '#9ca3af', fontWeight: '500', whiteSpace: 'nowrap' }}>🚚 ค่าส่ง:</span>
               <input
                 type="number"
                 min="0"
                 placeholder="0"
                 value={shippingCost}
                 onChange={(e) => setShippingCost(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  background: '#1a1b26',
+                  border: '1.5px solid #2e303a',
+                  borderRadius: '8px',
+                  color: '#f3f4f6',
+                  fontSize: '13px',
+                  outline: 'none',
+                  textAlign: 'right'
+                }}
+                disabled={cart.length === 0}
+              />
+            </div>
+
+            {/* Installation Cost Input */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1', minWidth: '130px' }}>
+              <span style={{ fontSize: '13px', color: '#9ca3af', fontWeight: '500', whiteSpace: 'nowrap' }}>🔧 ค่าติดตั้ง:</span>
+              <input
+                type="number"
+                min="0"
+                placeholder="0"
+                value={installationCost}
+                onChange={(e) => setInstallationCost(e.target.value)}
                 style={{
                   width: '100%',
                   padding: '8px 12px',
@@ -1539,9 +1609,17 @@ const POS = () => {
             )}
             {shippingNum > 0 && (
               <div className="cart-summary-row" style={{ color: '#e5e7eb' }}>
-                <span>ค่าจัดส่ง</span>
+                <span>🚚 ค่าส่ง</span>
                 <span>
                   ฿{shippingNum.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
+            {installationNum > 0 && (
+              <div className="cart-summary-row" style={{ color: '#e5e7eb' }}>
+                <span>🔧 ค่าติดตั้ง</span>
+                <span>
+                  ฿{installationNum.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                 </span>
               </div>
             )}

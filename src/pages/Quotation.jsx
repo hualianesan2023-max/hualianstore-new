@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../data/store';
 import logoImg from '../assets/logo.png';
 import './Quotation.css';
+import { showAlert, showConfirm } from '../utils/alerts';
 
 // ── Thai Baht Text Conversion ───────────────────────────────────
 const bahtText = (num) => {
@@ -145,6 +146,8 @@ const Quotation = () => {
   const [paymentTerms, setPaymentTerms] = useState('โอนเงินเข้าบัญชี');
   const [salesperson, setSalesperson] = useState('');
   const [discountAmount, setDiscountAmount] = useState(0);
+  const [shippingCost, setShippingCost] = useState(0);
+  const [installationCost, setInstallationCost] = useState(0);
   const [vatType, setVatType] = useState('inclusive'); // inclusive | exclusive | none
   const [items, setItems] = useState([]);
 
@@ -165,15 +168,22 @@ const Quotation = () => {
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const prefix = `QT${yy}${mm}-`;
     
-    // Find matching items from this month
+    // Find matching items from this month in database state
     const matchPrefix = quotations.filter(q => q.id.startsWith(prefix));
-    let nextNum = 1;
+    let dbMax = 0;
     if (matchPrefix.length > 0) {
       const numbers = matchPrefix.map(q => parseInt(q.id.replace(prefix, ''), 10)).filter(n => !isNaN(n));
       if (numbers.length > 0) {
-        nextNum = Math.max(...numbers) + 1;
+        dbMax = Math.max(...numbers);
       }
     }
+
+    // Get the last sequence number generated on this browser
+    const storageKey = `last_quotation_seq_${yy}${mm}`;
+    const localMax = parseInt(localStorage.getItem(storageKey), 10) || 0;
+
+    // Use the higher one and add 1
+    const nextNum = Math.max(dbMax, localMax) + 1;
     return `${prefix}${String(nextNum).padStart(3, '0')}`;
   };
 
@@ -195,6 +205,8 @@ const Quotation = () => {
     setPaymentTerms('โอนเงินเข้าบัญชี');
     setSalesperson(currentUser?.name || 'ฝ่ายขาย');
     setDiscountAmount(0);
+    setShippingCost(0);
+    setInstallationCost(0);
     setVatType('inclusive');
     setItems([]);
     setActiveTab('create');
@@ -316,7 +328,7 @@ const Quotation = () => {
   };
 
   // Calculate Subtotal, VAT, Total
-  const calculateTotals = (currentItems, discount, currentVatType) => {
+  const calculateTotals = (currentItems, discount, currentVatType, shipping = 0, installation = 0) => {
     const rawSubtotal = currentItems.reduce((sum, item) => sum + (item.sellPrice * item.quantity), 0);
     const postDiscount = Math.max(0, rawSubtotal - Number(discount || 0));
     
@@ -338,35 +350,84 @@ const Quotation = () => {
       total = postDiscount;
     }
 
+    const grandTotal = total + Number(shipping || 0) + Number(installation || 0);
+
     return {
       subtotal: Math.round(subtotal * 100) / 100,
       tax: Math.round(tax * 100) / 100,
-      total: Math.round(total * 100) / 100,
+      total: Math.round(grandTotal * 100) / 100,
       rawSubtotal
     };
   };
 
-  const totals = calculateTotals(items, discountAmount, vatType);
+  const totals = calculateTotals(items, discountAmount, vatType, shippingCost, installationCost);
 
   // Save Quotation Handler
-  const handleSaveQuotation = (e) => {
+  const handleSaveQuotation = async (e) => {
     e.preventDefault();
     if (!customerName.trim()) {
-      alert('กรุณากรอกชื่อลูกค้าหรือชื่อบริษัท');
+      showAlert('กรุณากรอกชื่อลูกค้าหรือชื่อบริษัท', '', 'warning');
       return;
     }
     if (items.length === 0) {
-      alert('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ');
+      showAlert('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ', '', 'warning');
+      return;
+    }
+
+    const confirmed = await showConfirm(
+      "คุณต้องการบันทึกใบเสนอราคานี้ใช่หรือไม่?", 
+      "ระบบจะทำการบันทึกข้อมูลนี้ไปยังคลาวด์", 
+      "ใช่, บันทึก", 
+      "ยกเลิก"
+    );
+    if (!confirmed) {
       return;
     }
 
     const { subtotal, tax, total } = totals;
     
+    // Determine customer ID (create new customer if not exists)
+    let finalCustId = selectedCustId || null;
+    const exists = (state.customers || []).some(
+      c => c.name.toLowerCase().trim() === customerName.toLowerCase().trim()
+    );
+
+    if (customerName.trim() && !exists) {
+      const prefix = 'XL-';
+      let maxNum = 0;
+      (state.customers || []).forEach((c) => {
+        if (c.id && c.id.toUpperCase().startsWith(prefix)) {
+          const numPartStr = c.id.slice(prefix.length);
+          const numPart = parseInt(numPartStr, 10);
+          if (!isNaN(numPart) && numPart > maxNum) {
+            maxNum = numPart;
+          }
+        }
+      });
+      const newCustId = `${prefix}${String(maxNum + 1).padStart(5, '0')}`;
+      
+      const success = await dispatch({
+        type: 'ADD_CUSTOMER',
+        payload: {
+          id: newCustId,
+          name: customerName.trim(),
+          phone: customerPhone.trim() || '-',
+          address: customerAddress.trim() || '-',
+          taxId: customerTaxId.trim() || '-'
+        }
+      });
+      if (!success) {
+        // Customer creation failed, error popup already shown by store
+        return;
+      }
+      finalCustId = newCustId;
+    }
+
     const newQuotation = {
       id: quotationNo.trim() || generateQuotationNo(quotationDate),
       date: quotationDate,
       customerType,
-      customerId: selectedCustId || null,
+      customerId: finalCustId,
       customerName: customerName.trim(),
       customerAddress: customerAddress.trim(),
       customerPhone: customerPhone.trim(),
@@ -377,6 +438,8 @@ const Quotation = () => {
       paymentTerms,
       salesperson,
       discountAmount: Number(discountAmount),
+      shippingCost: Number(shippingCost),
+      installationCost: Number(installationCost),
       vatType,
       subtotal,
       tax,
@@ -384,18 +447,35 @@ const Quotation = () => {
       items
     };
 
+    let saveSuccess = false;
     if (editId) {
-      dispatch({ type: 'UPDATE_QUOTATION', payload: { ...newQuotation, id: editId } });
+      saveSuccess = await dispatch({ type: 'UPDATE_QUOTATION', payload: { ...newQuotation, id: editId } });
     } else {
-      const dup = quotations.some(q => q.id === newQuotation.id);
-      if (dup) {
-        newQuotation.id = generateQuotationNo(quotationDate);
+      let finalId = newQuotation.id;
+      let attempt = 0;
+      while (quotations.some(q => q.id === finalId) && attempt < 100) {
+        // Increment the running number suffix
+        const prefix = finalId.slice(0, 9); // e.g. "QT6907-"
+        const suffix = finalId.slice(9);
+        const nextNum = (parseInt(suffix, 10) || 0) + 1;
+        finalId = `${prefix}${String(nextNum).padStart(3, '0')}`;
+        attempt++;
       }
-      dispatch({ type: 'ADD_QUOTATION', payload: newQuotation });
+      newQuotation.id = finalId;
+      saveSuccess = await dispatch({ type: 'ADD_QUOTATION', payload: newQuotation });
     }
 
-    setEditId(null);
-    setActiveTab('history');
+    if (saveSuccess) {
+      // Store the sequence number in localStorage to prevent resetting when quotations are deleted/converted
+      const prefix = newQuotation.id.slice(0, 9); // e.g. "QT6907-"
+      const suffix = newQuotation.id.slice(9);
+      const seqNum = parseInt(suffix, 10) || 0;
+      const yyMm = prefix.replace('QT', '').replace('-', ''); // e.g. "6907"
+      localStorage.setItem(`last_quotation_seq_${yyMm}`, String(seqNum));
+
+      setEditId(null);
+      setActiveTab('history');
+    }
   };
 
   // Edit Quotation (Load into form)
@@ -415,14 +495,22 @@ const Quotation = () => {
     setPaymentTerms(q.paymentTerms || 'โอนเงินเข้าบัญชี');
     setSalesperson(q.salesperson || '');
     setDiscountAmount(q.discountAmount || 0);
+    setShippingCost(q.shippingCost || 0);
+    setInstallationCost(q.installationCost || 0);
     setVatType(q.vatType || 'inclusive');
     setItems(q.items || []);
     setActiveTab('create');
   };
 
   // Delete Quotation
-  const handleDeleteQuotation = (id) => {
-    if (window.confirm(`ต้องการลบใบเสนอราคาเลขที่ ${id} ใช่หรือไม่?`)) {
+  const handleDeleteQuotation = async (id) => {
+    const confirmed = await showConfirm(
+      `ต้องการลบใบเสนอราคาเลขที่ ${id} ใช่หรือไม่?`,
+      'ข้อมูลนี้จะถูกลบออกจากฐานข้อมูลและไม่สามารถกู้คืนได้',
+      'ใช่, ลบเลย',
+      'ยกเลิก'
+    );
+    if (confirmed) {
       dispatch({ type: 'DELETE_QUOTATION', payload: id });
     }
   };
@@ -436,11 +524,15 @@ const Quotation = () => {
     return matchesSearch && matchesCategory;
   });
 
-  // Filter history quotations list
+  // Filter history quotations list (newest first)
   const filteredHistory = quotations.filter(q => {
     return q.id.toLowerCase().includes(historySearch.toLowerCase()) ||
            q.customerName.toLowerCase().includes(historySearch.toLowerCase()) ||
            (q.salesperson && q.salesperson.toLowerCase().includes(historySearch.toLowerCase()));
+  }).sort((a, b) => {
+    const dateDiff = new Date(b.date) - new Date(a.date);
+    if (dateDiff !== 0) return dateDiff;
+    return b.id.localeCompare(a.id);
   });
 
   return (
@@ -967,6 +1059,31 @@ const Quotation = () => {
                   </div>
                 </div>
 
+                {/* Shipping & Installation Row */}
+                <div className="vat-discount-row" style={{ marginTop: '12px' }}>
+                  <div className="form-group flex-1">
+                    <label className="input-label">ค่าจัดส่ง / ค่าขนส่ง (บาท)</label>
+                    <input 
+                      type="number" 
+                      className="form-input" 
+                      min="0"
+                      value={shippingCost}
+                      onChange={(e) => setShippingCost(parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                  
+                  <div className="form-group flex-1">
+                    <label className="input-label">ค่าติดตั้ง (บาท)</label>
+                    <input 
+                      type="number" 
+                      className="form-input" 
+                      min="0"
+                      value={installationCost}
+                      onChange={(e) => setInstallationCost(parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                </div>
+
                 <div className="calculation-lines border-top">
                   <div className="calc-line">
                     <span>รวมราคาสินค้าดิบ (ก่อนส่วนลด):</span>
@@ -986,6 +1103,18 @@ const Quotation = () => {
                     <span>ภาษีมูลค่าเพิ่ม (VAT 7%):</span>
                     <span>{totals.tax > 0 ? `฿${formatCurrency(totals.tax)}` : 'ยกเว้น'}</span>
                   </div>
+                  {shippingCost > 0 && (
+                    <div className="calc-line">
+                      <span>ค่าจัดส่ง / ค่าขนส่ง:</span>
+                      <span>฿{formatCurrency(shippingCost)}</span>
+                    </div>
+                  )}
+                  {installationCost > 0 && (
+                    <div className="calc-line">
+                      <span>ค่าติดตั้ง:</span>
+                      <span>฿{formatCurrency(installationCost)}</span>
+                    </div>
+                  )}
                   <div className="calc-line total highlight-net">
                     <span>ยอดเงินสุทธิทั้งสิ้น (Net Grand Total):</span>
                     <span>฿{formatCurrency(totals.total)}</span>
@@ -1006,7 +1135,7 @@ const Quotation = () => {
                     className="btn-accent"
                     onClick={() => {
                       if (items.length === 0) {
-                        alert('กรุณาเพิ่มรายการสินค้าก่อนกดยืนยัน');
+                        showAlert('กรุณาเพิ่มรายการสินค้าก่อนกดยืนยัน', '', 'warning');
                         return;
                       }
                       setPreviewQuotation({
@@ -1024,6 +1153,8 @@ const Quotation = () => {
                         paymentTerms,
                         salesperson,
                         discountAmount: Number(discountAmount),
+                        shippingCost: Number(shippingCost),
+                        installationCost: Number(installationCost),
                         vatType,
                         subtotal: totals.subtotal,
                         tax: totals.tax,
@@ -1443,6 +1574,20 @@ const QuotationPreviewModal = ({ quotation, store, onClose }) => {
                   <span className="lbl font-bold">ภาษีมูลค่าเพิ่ม / VAT (7%) :</span>
                   <span className="val">{quotation.tax > 0 ? formatCurrency(quotation.tax) : 'ยกเว้นภาษี'}</span>
                 </div>
+
+                {quotation.shippingCost > 0 && (
+                  <div className="calc-field border-top">
+                    <span className="lbl font-bold">ค่าจัดส่ง / Shipping :</span>
+                    <span className="val">฿{formatCurrency(quotation.shippingCost)}</span>
+                  </div>
+                )}
+
+                {quotation.installationCost > 0 && (
+                  <div className="calc-field border-top">
+                    <span className="lbl font-bold">ค่าติดตั้ง / Installation :</span>
+                    <span className="val">฿{formatCurrency(quotation.installationCost)}</span>
+                  </div>
+                )}
 
                 <div className="calc-field border-top highlight-grand">
                   <span className="lbl font-bold">ยอดเงินสุทธิ / Grand Total :</span>

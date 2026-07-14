@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../data/store';
 import { categories as categoryList } from '../data/mockData';
 import './Products.css';
+import { showAlert, showConfirm } from '../utils/alerts';
 
 // ─── Product Types (Brands) ───────────────────────────────────────────
 const DEFAULT_PRODUCT_TYPES = [
@@ -83,13 +84,13 @@ const Products = () => {
     const cleanPrefix = prefix.trim().toUpperCase();
 
     if (!cleanName || !cleanPrefix) {
-      alert('กรุณากรอกข้อมูลประเภทและตัวย่อให้ครบถ้วน!');
+      showAlert('กรุณากรอกข้อมูลประเภทและตัวย่อให้ครบถ้วน!', '', 'warning');
       return;
     }
 
     const currentTypes = getProductTypes();
     if (currentTypes.some((t) => t.id.toLowerCase() === cleanName.toLowerCase() || t.prefix.toUpperCase() === cleanPrefix)) {
-      alert('ชื่อประเภทหรือตัวย่อรหัสเครื่องนี้มีอยู่แล้ว!');
+      showAlert('ชื่อประเภทหรือตัวย่อรหัสเครื่องนี้มีอยู่แล้ว!', '', 'warning');
       return;
     }
 
@@ -340,8 +341,14 @@ const Products = () => {
     setShowModal(true);
   };
 
-  const handleDelete = (id) => {
-    if (window.confirm('คุณต้องการลบสินค้านี้หรือไม่?')) {
+  const handleDelete = async (id) => {
+    const confirmed = await showConfirm(
+      'คุณต้องการลบสินค้านี้หรือไม่?',
+      'ข้อมูลสินค้าจะถูกลบออกจากคลังสินค้าอย่างถาวร',
+      'ใช่, ลบเลย',
+      'ยกเลิก'
+    );
+    if (confirmed) {
       dispatch({ type: 'DELETE_PRODUCT', payload: id });
     }
   };

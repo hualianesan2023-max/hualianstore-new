@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from './supabaseClient';
+import Swal from 'sweetalert2';
 
 // ======================================
 // Actions
@@ -377,29 +378,43 @@ export function StoreProvider({ children }) {
       }));
 
       // Map customers (Fallback to mock customers if database is empty or fails)
-      const rawCustomers = (dbCustomers && dbCustomers.length > 0) ? dbCustomers : [
-        {
-          id: 'XL-00001',
-          name: 'บริษัท ทีเค แพ็ค จำกัด',
-          phone: '0833748061',
-          address: '981/89-90 ถนนบางขุนเทียน-ชายทะเล แขวงแสมดำ เขตบางขุนเทียน กรุงเทพมหานคร 10150',
-          tax_id: '0105554116298'
-        },
-        {
-          id: 'XL-00002',
-          name: 'สมชาย ดีเลิศ',
-          phone: '081-234-5678',
-          address: '123/45 ถ.พหลโยธิน แขวงสามเสนใน เขตพญาไท กรุงเทพฯ 10400',
-          tax_id: '1234567890123'
-        },
-        {
-          id: 'XL-00003',
-          name: 'บริษัท หัวเหรียญ จำกัด (สำนักงานใหญ่)',
-          phone: '044-002716',
-          address: '841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000',
-          tax_id: '0303547004494'
+      let rawCustomers = dbCustomers || [];
+      if (rawCustomers.length === 0) {
+        const mockCustomers = [
+          {
+            id: 'XL-00001',
+            name: 'บริษัท ทีเค แพ็ค จำกัด',
+            phone: '0833748061',
+            address: '981/89-90 ถนนบางขุนเทียน-ชายทะเล แขวงแสมดำ เขตบางขุนเทียน กรุงเทพมหานคร 10150',
+            tax_id: '0105554116298'
+          },
+          {
+            id: 'XL-00002',
+            name: 'สมชาย ดีเลิศ',
+            phone: '081-234-5678',
+            address: '123/45 ถ.พหลโยธิน แขวงสามเสนใน เขตพญาไท กรุงเทพฯ 10400',
+            tax_id: '1234567890123'
+          },
+          {
+            id: 'XL-00003',
+            name: 'บริษัท หัวเหรียญ จำกัด (สำนักงานใหญ่)',
+            phone: '044-002716',
+            address: '841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000',
+            tax_id: '0303547004494'
+          }
+        ];
+        console.log('Seeding default mock customers to Supabase database...', mockCustomers.length);
+        for (const c of mockCustomers) {
+          await supabase.from('customers').insert({
+            id: c.id,
+            name: c.name,
+            phone: c.phone,
+            address: c.address,
+            tax_id: c.tax_id
+          });
         }
-      ];
+        rawCustomers = mockCustomers;
+      }
 
       const mappedCustomers = rawCustomers.map(row => {
         const nameLower = (row.name || '').toLowerCase();
@@ -517,6 +532,8 @@ export function StoreProvider({ children }) {
         paymentTerms: q.payment_terms || 'โอนเงินเข้าบัญชี',
         salesperson: q.salesperson || '',
         discountAmount: Number(q.discount_amount || 0),
+        shippingCost: Number(q.shipping_cost || 0),
+        installationCost: Number(q.installation_cost || 0),
         vatType: q.vat_type || 'inclusive',
         subtotal: Number(q.subtotal || 0),
         tax: Number(q.tax || 0),
@@ -549,6 +566,8 @@ export function StoreProvider({ children }) {
                   payment_terms: q.paymentTerms || null,
                   salesperson: q.salesperson || null,
                   discount_amount: Number(q.discountAmount || 0),
+                  shipping_cost: Number(q.shippingCost || 0),
+                  installation_cost: Number(q.installationCost || 0),
                   vat_type: q.vatType || 'inclusive',
                   subtotal: Number(q.subtotal || 0),
                   tax: Number(q.tax || 0),
@@ -761,7 +780,15 @@ export function StoreProvider({ children }) {
           tax_id: c.taxId || ''
         });
         success = !error;
-        if (error) console.error('Add customer error:', error);
+        if (error) {
+          console.error('Add customer error:', error);
+          Swal.fire({
+            title: 'เกิดข้อผิดพลาดในการเพิ่มลูกค้า',
+            text: 'กรุณาตรวจสอบว่าข้อมูล (เช่น เบอร์โทร หรือ เลขประจำตัวผู้เสียภาษี) ยาวเกินไปหรือไม่: ' + (error.message || JSON.stringify(error)),
+            icon: 'error',
+            confirmButtonText: 'ตกลง'
+          });
+        }
       } 
       else if (action.type === ACTIONS.UPDATE_CUSTOMER) {
         const c = action.payload;
@@ -772,7 +799,15 @@ export function StoreProvider({ children }) {
           tax_id: c.taxId || ''
         }).eq('id', c.id);
         success = !error;
-        if (error) console.error('Update customer error:', error);
+        if (error) {
+          console.error('Update customer error:', error);
+          Swal.fire({
+            title: 'เกิดข้อผิดพลาดในการอัปเดตลูกค้า',
+            text: 'กรุณาตรวจสอบว่าข้อมูลยาวเกินไปหรือไม่: ' + (error.message || JSON.stringify(error)),
+            icon: 'error',
+            confirmButtonText: 'ตกลง'
+          });
+        }
       } 
       else if (action.type === ACTIONS.DELETE_CUSTOMER) {
         const { error } = await supabase.from('customers').delete().eq('id', action.payload);
@@ -870,6 +905,8 @@ export function StoreProvider({ children }) {
           payment_terms: q.paymentTerms || null,
           salesperson: q.salesperson || null,
           discount_amount: Number(q.discountAmount || 0),
+          shipping_cost: Number(q.shippingCost || 0),
+          installation_cost: Number(q.installationCost || 0),
           vat_type: q.vatType || 'inclusive',
           subtotal: Number(q.subtotal || 0),
           tax: Number(q.tax || 0),
@@ -878,6 +915,12 @@ export function StoreProvider({ children }) {
 
         if (quotErr) {
           console.error('Add quotation error:', quotErr);
+          Swal.fire({
+            title: 'เกิดข้อผิดพลาดในการบันทึกใบเสนอราคา',
+            text: 'กรุณาอัปเดตตารางฐานข้อมูลใน Supabase: ' + (quotErr.message || JSON.stringify(quotErr)),
+            icon: 'error',
+            confirmButtonText: 'ตกลง'
+          });
           success = false;
         } else {
           for (const item of q.items || []) {
@@ -891,6 +934,12 @@ export function StoreProvider({ children }) {
             });
             if (itemErr) {
               console.error('Add quotation item error:', itemErr);
+              Swal.fire({
+                title: 'เกิดข้อผิดพลาดในการบันทึกสินค้า',
+                text: itemErr.message || JSON.stringify(itemErr),
+                icon: 'error',
+                confirmButtonText: 'ตกลง'
+              });
               success = false;
               break;
             }
@@ -913,6 +962,8 @@ export function StoreProvider({ children }) {
           payment_terms: q.paymentTerms || null,
           salesperson: q.salesperson || null,
           discount_amount: Number(q.discountAmount || 0),
+          shipping_cost: Number(q.shippingCost || 0),
+          installation_cost: Number(q.installationCost || 0),
           vat_type: q.vatType || 'inclusive',
           subtotal: Number(q.subtotal || 0),
           tax: Number(q.tax || 0),
@@ -921,6 +972,12 @@ export function StoreProvider({ children }) {
 
         if (quotErr) {
           console.error('Update quotation error:', quotErr);
+          Swal.fire({
+            title: 'เกิดข้อผิดพลาดในการแก้ไขใบเสนอราคา',
+            text: 'กรุณาอัปเดตตารางฐานข้อมูลใน Supabase: ' + (quotErr.message || JSON.stringify(quotErr)),
+            icon: 'error',
+            confirmButtonText: 'ตกลง'
+          });
           success = false;
         } else {
           const { error: delErr } = await supabase.from('quotation_items').delete().eq('quotation_id', q.id);
@@ -963,8 +1020,10 @@ export function StoreProvider({ children }) {
       if (action.type === ACTIONS.LOGIN_USER || action.type === ACTIONS.LOGOUT_USER) {
         dispatch(action);
       }
+      return success;
     } catch (err) {
       console.error('Database error executing dispatch action:', action.type, err.message);
+      return false;
     }
   }, [refreshData]);
 
