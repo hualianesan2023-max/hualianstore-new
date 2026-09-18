@@ -264,6 +264,22 @@
 
 .repair-date-cell { white-space: nowrap; color: #c4b5fd; }
 
+.repair-tech-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  background: rgba(99,102,241,0.12);
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 6px;
+  font-size: 12px;
+  color: #a5b4fc;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.repair-tech-select {
+  cursor: pointer;
+}
+
 /* Cost Cell */
 .repair-cost-cell { text-align: right; }
 .repair-cost-actual { color: #10b981; font-weight: 700; font-size: 14px; }

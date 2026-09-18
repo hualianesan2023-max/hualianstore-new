@@ -45,6 +45,11 @@ export const ACTIONS = {
   ADD_SHOP_REPAIR: 'ADD_SHOP_REPAIR',
   UPDATE_SHOP_REPAIR: 'UPDATE_SHOP_REPAIR',
   DELETE_SHOP_REPAIR: 'DELETE_SHOP_REPAIR',
+  // Delivery Jobs
+  SET_CUSTOMER_DELIVERIES: 'SET_CUSTOMER_DELIVERIES',
+  ADD_CUSTOMER_DELIVERY: 'ADD_CUSTOMER_DELIVERY',
+  UPDATE_CUSTOMER_DELIVERY: 'UPDATE_CUSTOMER_DELIVERY',
+  DELETE_CUSTOMER_DELIVERY: 'DELETE_CUSTOMER_DELIVERY',
 };
 
 const STORAGE_KEY = 'pos_store_state';
@@ -81,6 +86,7 @@ function loadInitialState() {
     quotations: [],
     customerRepairs: [],
     shopRepairs: [],
+    customerDeliveries: [],
     currentUser,
     users: [],
   };
@@ -281,6 +287,21 @@ function storeReducer(state, action) {
       };
     case ACTIONS.DELETE_SHOP_REPAIR:
       return { ...state, shopRepairs: state.shopRepairs.filter((r) => r.id !== action.payload) };
+
+    // ── Customer Deliveries (ส่งเครื่องลูกค้า) ──
+    case ACTIONS.SET_CUSTOMER_DELIVERIES:
+      return { ...state, customerDeliveries: action.payload };
+    case ACTIONS.ADD_CUSTOMER_DELIVERY:
+      return { ...state, customerDeliveries: [action.payload, ...state.customerDeliveries] };
+    case ACTIONS.UPDATE_CUSTOMER_DELIVERY:
+      return {
+        ...state,
+        customerDeliveries: state.customerDeliveries.map((r) =>
+          r.id === action.payload.id ? { ...r, ...action.payload } : r
+        ),
+      };
+    case ACTIONS.DELETE_CUSTOMER_DELIVERY:
+      return { ...state, customerDeliveries: state.customerDeliveries.filter((r) => r.id !== action.payload) };
 
     default:
       return state;
@@ -697,6 +718,33 @@ export function StoreProvider({ children }) {
         dispatch({ type: ACTIONS.SET_SHOP_REPAIRS, payload: mappedShopRepairs });
       } catch (repairErr) {
         console.warn('Could not fetch shop_repairs:', repairErr.message);
+      }
+
+      // Fetch customer_deliveries
+      try {
+        const { data: dbCustomerDeliveries } = await supabase
+          .from('customer_deliveries')
+          .select('*')
+          .order('id', { ascending: false });
+        const mappedCustomerDeliveries = (dbCustomerDeliveries || []).map(r => ({
+          id: r.id,
+          date: r.date,
+          customerName: r.customer_name,
+          customerPhone: r.customer_phone,
+          customerAddress: r.customer_address,
+          locationUrl: r.location_url,
+          appointmentDate: r.appointment_date,
+          machineModel: r.machine_model,
+          symptoms: r.symptoms,
+          technician: r.technician,
+          status: r.status,
+          estimatedCost: r.estimated_cost,
+          actualCost: r.actual_cost,
+          notes: r.notes,
+        }));
+        dispatch({ type: ACTIONS.SET_CUSTOMER_DELIVERIES, payload: mappedCustomerDeliveries });
+      } catch (delivErr) {
+        console.warn('Could not fetch customer_deliveries:', delivErr.message);
       }
 
     } catch (err) {
@@ -1186,6 +1234,50 @@ export function StoreProvider({ children }) {
       else if (action.type === ACTIONS.DELETE_SHOP_REPAIR) {
         const { error } = await supabase.from('shop_repairs').delete().eq('id', action.payload);
         if (error) { console.error('Delete shop repair error:', error); success = false; }
+      }
+
+      // ── Customer Delivery CRUD ────────────────────────────────
+      else if (action.type === ACTIONS.ADD_CUSTOMER_DELIVERY) {
+        const r = action.payload;
+        const { error } = await supabase.from('customer_deliveries').insert({
+          id: r.id,
+          date: r.date,
+          customer_name: r.customerName,
+          customer_phone: r.customerPhone || null,
+          customer_address: r.customerAddress || null,
+          location_url: r.locationUrl || null,
+          appointment_date: r.appointmentDate || null,
+          machine_model: r.machineModel,
+          symptoms: r.symptoms || null,
+          technician: r.technician || null,
+          status: r.status || 'รอนัดวัน',
+          estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
+          actual_cost: r.actualCost ? Number(r.actualCost) : null,
+          notes: r.notes || null,
+        });
+        if (error) { console.error('Add customer delivery error:', error); success = false; }
+      }
+      else if (action.type === ACTIONS.UPDATE_CUSTOMER_DELIVERY) {
+        const r = action.payload;
+        const { error } = await supabase.from('customer_deliveries').update({
+          customer_name: r.customerName,
+          customer_phone: r.customerPhone || null,
+          customer_address: r.customerAddress || null,
+          location_url: r.locationUrl || null,
+          appointment_date: r.appointmentDate || null,
+          machine_model: r.machineModel,
+          symptoms: r.symptoms || null,
+          technician: r.technician || null,
+          status: r.status,
+          estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
+          actual_cost: r.actualCost ? Number(r.actualCost) : null,
+          notes: r.notes || null,
+        }).eq('id', r.id);
+        if (error) { console.error('Update customer delivery error:', error); success = false; }
+      }
+      else if (action.type === ACTIONS.DELETE_CUSTOMER_DELIVERY) {
+        const { error } = await supabase.from('customer_deliveries').delete().eq('id', action.payload);
+        if (error) { console.error('Delete customer delivery error:', error); success = false; }
       }
 
       // If the write to Supabase was successful, refresh client data from database
