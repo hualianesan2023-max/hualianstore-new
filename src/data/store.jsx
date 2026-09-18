@@ -36,6 +36,15 @@ export const ACTIONS = {
   ADD_QUOTATION: 'ADD_QUOTATION',
   UPDATE_QUOTATION: 'UPDATE_QUOTATION',
   DELETE_QUOTATION: 'DELETE_QUOTATION',
+  // Repair Jobs
+  SET_CUSTOMER_REPAIRS: 'SET_CUSTOMER_REPAIRS',
+  ADD_CUSTOMER_REPAIR: 'ADD_CUSTOMER_REPAIR',
+  UPDATE_CUSTOMER_REPAIR: 'UPDATE_CUSTOMER_REPAIR',
+  DELETE_CUSTOMER_REPAIR: 'DELETE_CUSTOMER_REPAIR',
+  SET_SHOP_REPAIRS: 'SET_SHOP_REPAIRS',
+  ADD_SHOP_REPAIR: 'ADD_SHOP_REPAIR',
+  UPDATE_SHOP_REPAIR: 'UPDATE_SHOP_REPAIR',
+  DELETE_SHOP_REPAIR: 'DELETE_SHOP_REPAIR',
 };
 
 const STORAGE_KEY = 'pos_store_state';
@@ -70,6 +79,8 @@ function loadInitialState() {
     branches: [{ id: 'main', name: 'สำนักงานใหญ่ (นครราชสีมา)' }],
     customers: [],
     quotations: [],
+    customerRepairs: [],
+    shopRepairs: [],
     currentUser,
     users: [],
   };
@@ -240,6 +251,36 @@ function storeReducer(state, action) {
         ...state,
         quotations: state.quotations.filter((q) => q.id !== action.payload),
       };
+
+    // ── Customer Repairs ──
+    case ACTIONS.SET_CUSTOMER_REPAIRS:
+      return { ...state, customerRepairs: action.payload };
+    case ACTIONS.ADD_CUSTOMER_REPAIR:
+      return { ...state, customerRepairs: [action.payload, ...state.customerRepairs] };
+    case ACTIONS.UPDATE_CUSTOMER_REPAIR:
+      return {
+        ...state,
+        customerRepairs: state.customerRepairs.map((r) =>
+          r.id === action.payload.id ? { ...r, ...action.payload } : r
+        ),
+      };
+    case ACTIONS.DELETE_CUSTOMER_REPAIR:
+      return { ...state, customerRepairs: state.customerRepairs.filter((r) => r.id !== action.payload) };
+
+    // ── Shop Repairs ──
+    case ACTIONS.SET_SHOP_REPAIRS:
+      return { ...state, shopRepairs: action.payload };
+    case ACTIONS.ADD_SHOP_REPAIR:
+      return { ...state, shopRepairs: [action.payload, ...state.shopRepairs] };
+    case ACTIONS.UPDATE_SHOP_REPAIR:
+      return {
+        ...state,
+        shopRepairs: state.shopRepairs.map((r) =>
+          r.id === action.payload.id ? { ...r, ...action.payload } : r
+        ),
+      };
+    case ACTIONS.DELETE_SHOP_REPAIR:
+      return { ...state, shopRepairs: state.shopRepairs.filter((r) => r.id !== action.payload) };
 
     default:
       return state;
@@ -605,6 +646,58 @@ export function StoreProvider({ children }) {
       dispatch({ type: ACTIONS.UPDATE_STORE_INFO, payload: mappedStoreInfo });
       dispatch({ type: ACTIONS.SET_SALES, payload: mappedSales });
       dispatch({ type: ACTIONS.SET_QUOTATIONS, payload: finalQuotations });
+
+      // Fetch customer_repairs
+      try {
+        const { data: dbCustomerRepairs } = await supabase
+          .from('customer_repairs')
+          .select('*')
+          .order('id', { ascending: false });
+        const mappedCustomerRepairs = (dbCustomerRepairs || []).map(r => ({
+          id: r.id,
+          date: r.date,
+          customerName: r.customer_name,
+          customerPhone: r.customer_phone,
+          customerAddress: r.customer_address,
+          locationUrl: r.location_url,
+          appointmentDate: r.appointment_date,
+          machineModel: r.machine_model,
+          symptoms: r.symptoms,
+          technician: r.technician,
+          status: r.status,
+          estimatedCost: r.estimated_cost,
+          actualCost: r.actual_cost,
+          notes: r.notes,
+        }));
+        dispatch({ type: ACTIONS.SET_CUSTOMER_REPAIRS, payload: mappedCustomerRepairs });
+      } catch (repairErr) {
+        console.warn('Could not fetch customer_repairs:', repairErr.message);
+      }
+
+      // Fetch shop_repairs
+      try {
+        const { data: dbShopRepairs } = await supabase
+          .from('shop_repairs')
+          .select('*')
+          .order('id', { ascending: false });
+        const mappedShopRepairs = (dbShopRepairs || []).map(r => ({
+          id: r.id,
+          date: r.date,
+          customerName: r.customer_name,
+          customerPhone: r.customer_phone,
+          customerAddress: r.customer_address,
+          machineModel: r.machine_model,
+          symptoms: r.symptoms,
+          technician: r.technician,
+          status: r.status,
+          estimatedCost: r.estimated_cost,
+          actualCost: r.actual_cost,
+          notes: r.notes,
+        }));
+        dispatch({ type: ACTIONS.SET_SHOP_REPAIRS, payload: mappedShopRepairs });
+      } catch (repairErr) {
+        console.warn('Could not fetch shop_repairs:', repairErr.message);
+      }
 
     } catch (err) {
       console.error('Failed to sync data directly with Supabase database:', err.message);
@@ -1009,6 +1102,90 @@ export function StoreProvider({ children }) {
           console.error('Delete quotation error:', delErr);
           success = false;
         }
+      }
+
+      // ── Customer Repair CRUD ──────────────────────────────────
+      else if (action.type === ACTIONS.ADD_CUSTOMER_REPAIR) {
+        const r = action.payload;
+        const { error } = await supabase.from('customer_repairs').insert({
+          id: r.id,
+          date: r.date,
+          customer_name: r.customerName,
+          customer_phone: r.customerPhone || null,
+          customer_address: r.customerAddress || null,
+          location_url: r.locationUrl || null,
+          appointment_date: r.appointmentDate || null,
+          machine_model: r.machineModel,
+          symptoms: r.symptoms || null,
+          technician: r.technician || null,
+          status: r.status || 'รอนัดวัน',
+          estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
+          actual_cost: r.actualCost ? Number(r.actualCost) : null,
+          notes: r.notes || null,
+        });
+        if (error) { console.error('Add customer repair error:', error); success = false; }
+      }
+      else if (action.type === ACTIONS.UPDATE_CUSTOMER_REPAIR) {
+        const r = action.payload;
+        const { error } = await supabase.from('customer_repairs').update({
+          customer_name: r.customerName,
+          customer_phone: r.customerPhone || null,
+          customer_address: r.customerAddress || null,
+          location_url: r.locationUrl || null,
+          appointment_date: r.appointmentDate || null,
+          machine_model: r.machineModel,
+          symptoms: r.symptoms || null,
+          technician: r.technician || null,
+          status: r.status,
+          estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
+          actual_cost: r.actualCost ? Number(r.actualCost) : null,
+          notes: r.notes || null,
+        }).eq('id', r.id);
+        if (error) { console.error('Update customer repair error:', error); success = false; }
+      }
+      else if (action.type === ACTIONS.DELETE_CUSTOMER_REPAIR) {
+        const { error } = await supabase.from('customer_repairs').delete().eq('id', action.payload);
+        if (error) { console.error('Delete customer repair error:', error); success = false; }
+      }
+
+      // ── Shop Repair CRUD ──────────────────────────────────────
+      else if (action.type === ACTIONS.ADD_SHOP_REPAIR) {
+        const r = action.payload;
+        const { error } = await supabase.from('shop_repairs').insert({
+          id: r.id,
+          date: r.date,
+          customer_name: r.customerName,
+          customer_phone: r.customerPhone || null,
+          customer_address: r.customerAddress || null,
+          machine_model: r.machineModel,
+          symptoms: r.symptoms || null,
+          technician: r.technician || null,
+          status: r.status || 'รอนัดวัน',
+          estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
+          actual_cost: r.actualCost ? Number(r.actualCost) : null,
+          notes: r.notes || null,
+        });
+        if (error) { console.error('Add shop repair error:', error); success = false; }
+      }
+      else if (action.type === ACTIONS.UPDATE_SHOP_REPAIR) {
+        const r = action.payload;
+        const { error } = await supabase.from('shop_repairs').update({
+          customer_name: r.customerName,
+          customer_phone: r.customerPhone || null,
+          customer_address: r.customerAddress || null,
+          machine_model: r.machineModel,
+          symptoms: r.symptoms || null,
+          technician: r.technician || null,
+          status: r.status,
+          estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
+          actual_cost: r.actualCost ? Number(r.actualCost) : null,
+          notes: r.notes || null,
+        }).eq('id', r.id);
+        if (error) { console.error('Update shop repair error:', error); success = false; }
+      }
+      else if (action.type === ACTIONS.DELETE_SHOP_REPAIR) {
+        const { error } = await supabase.from('shop_repairs').delete().eq('id', action.payload);
+        if (error) { console.error('Delete shop repair error:', error); success = false; }
       }
 
       // If the write to Supabase was successful, refresh client data from database
