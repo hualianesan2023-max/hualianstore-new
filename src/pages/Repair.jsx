@@ -489,7 +489,16 @@ const RepairFormModal = ({ mode, record, onClose, onSave, activeTab }) => {
 };
 
 // ── Repair / Delivery Table ───────────────────────────────
-const RepairTable = ({ items, onEdit, onDelete, onStatusChange, activeTab }) => {
+const RepairTable = ({
+  items,
+  onEdit,
+  onDelete,
+  onStatusChange,
+  activeTab,
+  sortBy,
+  sortOrder,
+  onToggleDateSort
+}) => {
   const isCustomer = activeTab === 'customer';
   const isDelivery = activeTab === 'delivery';
 
@@ -506,7 +515,20 @@ const RepairTable = ({ items, onEdit, onDelete, onStatusChange, activeTab }) => 
             <th>ลูกค้า</th>
             <th className="repair-th-province">📍 จังหวัดที่จะไป</th>
             <th>{isDelivery ? 'เครื่อง / รายการส่ง' : 'เครื่อง / อาการ'}</th>
-            {(isCustomer || isDelivery) && <th>{isDelivery ? 'วันนัดส่ง' : 'วันนัด'}</th>}
+            {(isCustomer || isDelivery) && (
+              <th
+                className="repair-th-date sortable"
+                onClick={onToggleDateSort}
+                title="คลิกเพื่อเรียงลำดับตามวันนัดหมาย"
+              >
+                <div className="repair-th-sortable-inner">
+                  <span>📅 {isDelivery ? 'วันนัดส่ง' : 'วันนัด'}</span>
+                  <span className="repair-sort-icon">
+                    {sortBy === 'appointmentDate' ? (sortOrder === 'asc' ? ' 🔼' : ' 🔽') : ' ⇅'}
+                  </span>
+                </div>
+              </th>
+            )}
             <th>{isDelivery ? 'ช่างผู้ส่ง' : 'ช่าง'}</th>
             <th>{isDelivery ? 'ค่าส่ง/บริการ' : 'ค่าซ่อม'}</th>
             <th>สถานะ</th>
@@ -552,7 +574,18 @@ const RepairTable = ({ items, onEdit, onDelete, onStatusChange, activeTab }) => 
                   </div>
                 </td>
                 {(isCustomer || isDelivery) && (
-                  <td className="repair-date-cell">{r.appointmentDate || '-'}</td>
+                  <td className="repair-date-cell">
+                    {r.appointmentDate ? (
+                      <div className="repair-date-badge-large" title={`วันนัด: ${r.appointmentDate}`}>
+                        <span className="repair-date-pin">📅</span>
+                        <span className="repair-date-text">{r.appointmentDate}</span>
+                      </div>
+                    ) : (
+                      <span className="repair-date-none">
+                        ⏳ รอนัดวัน
+                      </span>
+                    )}
+                  </td>
                 )}
                 <td>
                   <span className="repair-tech-badge">{r.technician || '-'}</span>
@@ -609,6 +642,10 @@ const Repair = () => {
   const [editRecord, setEditRecord] = useState(null);
   const [searchQuery, setSearchQuery]   = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [datePreset, setDatePreset]     = useState('all'); // 'all' | 'today' | 'tomorrow' | 'this_week' | 'this_month' | 'no_date' | 'custom'
+  const [customDate, setCustomDate]     = useState('');
+  const [sortBy, setSortBy]             = useState('appointmentDate'); // 'appointmentDate' | 'id'
+  const [sortOrder, setSortOrder]       = useState('asc'); // 'asc' | 'desc'
   const [receiptRecord, setReceiptRecord] = useState(null); // ← ใบรับซ่อม
 
   const currentList = useMemo(() => {
@@ -629,9 +666,61 @@ const Repair = () => {
     return 'DL';
   }, [activeTab]);
 
+  const getTodayStr = () => {
+    const d = new Date();
+    const yy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
+  const getTomorrowStr = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const yy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
+  const getNext7DaysStr = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    const yy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
   const filteredList = useMemo(() => {
-    let list = [...currentList].sort((a, b) => (b.id || '').localeCompare(a.id || ''));
-    if (statusFilter !== 'all') list = list.filter(r => r.status === statusFilter);
+    let list = [...currentList];
+
+    // 1. Status Filter
+    if (statusFilter !== 'all') {
+      list = list.filter(r => r.status === statusFilter);
+    }
+
+    // 2. Appointment Date Filter
+    const today = getTodayStr();
+    const tomorrow = getTomorrowStr();
+    const next7Days = getNext7DaysStr();
+    const ym = today.slice(0, 7);
+
+    if (datePreset === 'today') {
+      list = list.filter(r => r.appointmentDate === today);
+    } else if (datePreset === 'tomorrow') {
+      list = list.filter(r => r.appointmentDate === tomorrow);
+    } else if (datePreset === 'this_week') {
+      list = list.filter(r => r.appointmentDate && r.appointmentDate >= today && r.appointmentDate <= next7Days);
+    } else if (datePreset === 'this_month') {
+      list = list.filter(r => r.appointmentDate && r.appointmentDate.startsWith(ym));
+    } else if (datePreset === 'no_date') {
+      list = list.filter(r => !r.appointmentDate);
+    } else if (datePreset === 'custom' && customDate) {
+      list = list.filter(r => r.appointmentDate === customDate);
+    }
+
+    // 3. Search Query Filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(r => {
@@ -643,18 +732,59 @@ const Repair = () => {
           r.technician?.toLowerCase().includes(q) ||
           r.province?.toLowerCase().includes(q) ||
           prov.includes(q) ||
+          r.appointmentDate?.includes(q) ||
+          r.date?.includes(q) ||
           r.id?.toLowerCase().includes(q)
         );
       });
     }
+
+    // 4. Sorting
+    list.sort((a, b) => {
+      if (sortBy === 'appointmentDate') {
+        if (!a.appointmentDate && !b.appointmentDate) return (b.id || '').localeCompare(a.id || '');
+        if (!a.appointmentDate) return 1;
+        if (!b.appointmentDate) return -1;
+        return sortOrder === 'asc'
+          ? a.appointmentDate.localeCompare(b.appointmentDate)
+          : b.appointmentDate.localeCompare(a.appointmentDate);
+      }
+      return (b.id || '').localeCompare(a.id || '');
+    });
+
     return list;
-  }, [currentList, statusFilter, searchQuery]);
+  }, [currentList, statusFilter, datePreset, customDate, searchQuery, sortBy, sortOrder]);
 
   const statusCounts = useMemo(() => {
     const counts = { all: currentList.length };
     STATUSES.forEach(s => { counts[s.value] = currentList.filter(r => r.status === s.value).length; });
     return counts;
   }, [currentList]);
+
+  const dateCounts = useMemo(() => {
+    const today = getTodayStr();
+    const tomorrow = getTomorrowStr();
+    const next7Days = getNext7DaysStr();
+    const ym = today.slice(0, 7);
+
+    return {
+      all: currentList.length,
+      today: currentList.filter(r => r.appointmentDate === today).length,
+      tomorrow: currentList.filter(r => r.appointmentDate === tomorrow).length,
+      this_week: currentList.filter(r => r.appointmentDate && r.appointmentDate >= today && r.appointmentDate <= next7Days).length,
+      this_month: currentList.filter(r => r.appointmentDate && r.appointmentDate.startsWith(ym)).length,
+      no_date: currentList.filter(r => !r.appointmentDate).length,
+    };
+  }, [currentList]);
+
+  const handleToggleDateSort = () => {
+    if (sortBy === 'appointmentDate') {
+      setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy('appointmentDate');
+      setSortOrder('asc');
+    }
+  };
 
   const handleDelete = async (id) => {
     const title = activeTab === 'delivery' ? 'ลบรายการส่งเครื่องนี้?' : 'ลบงานซ่อมนี้?';
@@ -692,12 +822,16 @@ const Repair = () => {
   const switchTab = (tab) => {
     setActiveTab(tab);
     setStatusFilter('all');
+    setDatePreset('all');
+    setCustomDate('');
     setSearchQuery('');
   };
 
   const pageSubtitle = activeTab === 'delivery'
     ? 'จัดการรายการส่งมอบเครื่องจักรและติดตั้งให้ลูกค้า'
     : (activeTab === 'shop' ? 'จัดการเครื่องซ่อมหน้าร้านและออกใบรับซ่อม' : 'จัดการงานนัดหมายซ่อมเครื่องนอกสถานที่');
+
+  const isAppointmentTab = activeTab === 'customer' || activeTab === 'delivery';
 
   return (
     <div className="repair-page">
@@ -748,12 +882,93 @@ const Repair = () => {
         ))}
       </div>
 
+      {/* Date Filter Bar for Customer Repair & Delivery Tabs */}
+      {isAppointmentTab && (
+        <div className="repair-date-filter-bar">
+          <div className="repair-date-filter-left">
+            <span className="repair-date-filter-label">📅 ฟิลเตอร์วันนัด:</span>
+            <div className="repair-date-chips">
+              <button
+                className={`repair-date-chip ${datePreset === 'all' && !customDate ? 'active' : ''}`}
+                onClick={() => { setDatePreset('all'); setCustomDate(''); }}
+              >
+                ทั้งหมด <span className="date-chip-count">{dateCounts.all}</span>
+              </button>
+              <button
+                className={`repair-date-chip ${datePreset === 'today' ? 'active' : ''}`}
+                onClick={() => { setDatePreset('today'); setCustomDate(''); }}
+              >
+                ⚡ วันนี้ <span className="date-chip-count">{dateCounts.today}</span>
+              </button>
+              <button
+                className={`repair-date-chip ${datePreset === 'tomorrow' ? 'active' : ''}`}
+                onClick={() => { setDatePreset('tomorrow'); setCustomDate(''); }}
+              >
+                พรุ่งนี้ <span className="date-chip-count">{dateCounts.tomorrow}</span>
+              </button>
+              <button
+                className={`repair-date-chip ${datePreset === 'this_week' ? 'active' : ''}`}
+                onClick={() => { setDatePreset('this_week'); setCustomDate(''); }}
+              >
+                7 วันข้างหน้า <span className="date-chip-count">{dateCounts.this_week}</span>
+              </button>
+              <button
+                className={`repair-date-chip ${datePreset === 'this_month' ? 'active' : ''}`}
+                onClick={() => { setDatePreset('this_month'); setCustomDate(''); }}
+              >
+                เดือนนี้ <span className="date-chip-count">{dateCounts.this_month}</span>
+              </button>
+              <button
+                className={`repair-date-chip ${datePreset === 'no_date' ? 'active' : ''}`}
+                onClick={() => { setDatePreset('no_date'); setCustomDate(''); }}
+              >
+                ⏳ รอนัดวัน <span className="date-chip-count">{dateCounts.no_date}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="repair-date-filter-right">
+            <div className="repair-date-picker-wrap">
+              <span className="repair-date-picker-icon">📆</span>
+              <input
+                type="date"
+                className="repair-date-input"
+                value={customDate}
+                onChange={(e) => {
+                  setCustomDate(e.target.value);
+                  if (e.target.value) setDatePreset('custom');
+                  else setDatePreset('all');
+                }}
+                title="เลือกวันที่ระบุเพื่อฟิลเตอร์"
+              />
+              {customDate && (
+                <button
+                  className="repair-date-clear-btn"
+                  onClick={() => { setCustomDate(''); setDatePreset('all'); }}
+                  title="ล้างวันที่เลือก"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <button
+              className={`repair-sort-btn ${sortBy === 'appointmentDate' ? 'active' : ''}`}
+              onClick={handleToggleDateSort}
+              title="สลับการเรียงลำดับวันนัดหมาย"
+            >
+              ⇅ เรียงตามวันนัด {sortBy === 'appointmentDate' ? (sortOrder === 'asc' ? '⬆️ (เร็ว-ช้า)' : '⬇️ (ช้า-เร็ว)') : ''}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Search */}
       <div className="repair-search-bar">
         <span className="repair-search-icon">🔍</span>
         <input
           className="repair-search-input"
-          placeholder="ค้นหาชื่อลูกค้า, จังหวัด, เบอร์, รุ่นเครื่อง, ช่าง, รหัสงาน..."
+          placeholder="ค้นหาชื่อลูกค้า, จังหวัด, วันนัด (เช่น 2026-09), เบอร์, รุ่นเครื่อง, ช่าง, รหัสงาน..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
         />
@@ -769,6 +984,9 @@ const Repair = () => {
         onDelete={handleDelete}
         onStatusChange={handleStatusChange}
         activeTab={activeTab}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
+        onToggleDateSort={handleToggleDateSort}
       />
 
       {/* Modal Form */}
