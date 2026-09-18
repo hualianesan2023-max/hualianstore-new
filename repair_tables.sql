@@ -95,12 +95,21 @@ ALTER TABLE customer_repairs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shop_repairs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customer_deliveries ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations for authenticated users (adjust as needed)
-CREATE POLICY "Allow all for authenticated" ON customer_repairs
+-- Allow all operations for public & authenticated users
+DROP POLICY IF EXISTS "Allow all for customer_repairs" ON customer_repairs;
+CREATE POLICY "Allow all for customer_repairs" ON customer_repairs
   FOR ALL USING (true) WITH CHECK (true);
 
-CREATE POLICY "Allow all for authenticated" ON shop_repairs
+DROP POLICY IF EXISTS "Allow all for shop_repairs" ON shop_repairs;
+CREATE POLICY "Allow all for shop_repairs" ON shop_repairs
   FOR ALL USING (true) WITH CHECK (true);
 
-CREATE POLICY "Allow all for authenticated" ON customer_deliveries
+DROP POLICY IF EXISTS "Allow all for customer_deliveries" ON customer_deliveries;
+CREATE POLICY "Allow all for customer_deliveries" ON customer_deliveries
   FOR ALL USING (true) WITH CHECK (true);
+
+-- Enable Real-Time Broadcast on Supabase
+ALTER PUBLICATION supabase_realtime ADD TABLE customer_repairs;
+ALTER PUBLICATION supabase_realtime ADD TABLE shop_repairs;
+ALTER PUBLICATION supabase_realtime ADD TABLE customer_deliveries;
+

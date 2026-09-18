@@ -179,7 +179,7 @@ const Receipt = ({ sale, onClose }) => {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div className="receipt-modal" onClick={(e) => e.stopPropagation()}>
         <div className="receipt-paper-container" ref={containerRef}>
           <div 

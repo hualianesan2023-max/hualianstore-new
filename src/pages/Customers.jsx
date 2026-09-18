@@ -295,8 +295,8 @@ const Customers = () => {
 
       {/* Modal Form for Add/Edit */}
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '550px' }}>
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '550px' }}>
             <div className="modal-header">
               <h3 className="modal-title">
                 {currentCustomer ? '✏️ แก้ไขข้อมูลลูกค้า' : '👥 เพิ่มลูกค้าใหม่'}

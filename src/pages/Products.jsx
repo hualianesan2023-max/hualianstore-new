@@ -757,8 +757,8 @@ const Products = () => {
 
       {/* ─── Add / Edit Modal ───────────────────────────────────── */}
       {showModal && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-content">
             {/* Modal Header */}
             <div className="modal-header">
               <h2>

@@ -130,8 +130,8 @@ const RepairJobReceipt = ({ record, store, onClose }) => {
   const province = detectProvince(record);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="repair-receipt-modal" onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay">
+      <div className="repair-receipt-modal">
         {/* Action Bar */}
         <div className="repair-receipt-actions">
           <span className="repair-receipt-actions-title">🖨️ ใบรับซ่อม</span>
@@ -338,8 +338,8 @@ const RepairFormModal = ({ mode, record, onClose, onSave, activeTab }) => {
     : (isDelivery ? '✏️ แก้ไขรายการส่งเครื่องลูกค้า' : '✏️ แก้ไขงานซ่อม');
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="repair-modal" onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay">
+      <div className="repair-modal">
         <div className="repair-modal-header">
           <h3>{modalTitle}</h3>
           <button className="modal-close-btn" onClick={onClose}>✕</button>

@@ -781,7 +781,7 @@ const POS = () => {
 
         {/* ====== Quotation Search Modal ====== */}
         {showQuotationModal && (
-          <div className="qt-modal-overlay" onClick={() => setShowQuotationModal(false)}>
+          <div className="qt-modal-overlay">
             <div className="qt-modal-box" onClick={e => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="qt-modal-header">

@@ -1186,7 +1186,7 @@ const Quotation = () => {
       {/* MODAL: ADD CUSTOM SPECIAL ITEM */}
       {/* ──────────────────────────────────────────────────────── */}
       {showCustomModal && (
-        <div className="modal-overlay" onClick={() => setShowCustomModal(false)}>
+        <div className="modal-overlay">
           <div className="modal-content card-glass" onClick={(e) => e.stopPropagation()}>
             <h3 className="modal-title">✍️ เพิ่มรายการพิเศษ / บริการอื่น</h3>
             <form onSubmit={handleAddCustomItem}>
@@ -1270,7 +1270,7 @@ const Quotation = () => {
       {/* FULL SCREEN MODAL: CUSTOMER SEARCH */}
       {/* ──────────────────────────────────────────────────────── */}
       {showCustomerSearchModal && (
-        <div className="cust-modal-overlay" onClick={() => setShowCustomerSearchModal(false)}>
+        <div className="cust-modal-overlay">
           <div className="cust-modal-container" onClick={(e) => e.stopPropagation()}>
             <div className="cust-modal-header">
               <div className="cust-modal-title">
@@ -1399,7 +1399,7 @@ const QuotationPreviewModal = ({ quotation, store, onClose }) => {
   const isVatType = quotation.vatType;
 
   return (
-    <div className="quotation-modal-overlay" onClick={onClose}>
+    <div className="quotation-modal-overlay">
       <div className="quotation-modal-box" onClick={(e) => e.stopPropagation()}>
         
         {/* Scale Container Preview */}

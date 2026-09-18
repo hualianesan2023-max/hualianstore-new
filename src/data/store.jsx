@@ -59,11 +59,15 @@ const STORAGE_KEY = 'pos_store_state';
 // ======================================
 function loadInitialState() {
   let currentUser = null;
+  let savedRepairs = { customerRepairs: [], shopRepairs: [], customerDeliveries: [] };
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       currentUser = parsed.currentUser || null;
+      if (Array.isArray(parsed.customerRepairs)) savedRepairs.customerRepairs = parsed.customerRepairs;
+      if (Array.isArray(parsed.shopRepairs)) savedRepairs.shopRepairs = parsed.shopRepairs;
+      if (Array.isArray(parsed.customerDeliveries)) savedRepairs.customerDeliveries = parsed.customerDeliveries;
     }
   } catch (err) {
     console.warn('ไม่สามารถโหลดข้อมูลเซสชันผู้ใช้ได้:', err);
@@ -84,9 +88,9 @@ function loadInitialState() {
     branches: [{ id: 'main', name: 'สำนักงานใหญ่ (นครราชสีมา)' }],
     customers: [],
     quotations: [],
-    customerRepairs: [],
-    shopRepairs: [],
-    customerDeliveries: [],
+    customerRepairs: savedRepairs.customerRepairs,
+    shopRepairs: savedRepairs.shopRepairs,
+    customerDeliveries: savedRepairs.customerDeliveries,
     currentUser,
     users: [],
   };
@@ -668,84 +672,96 @@ export function StoreProvider({ children }) {
       dispatch({ type: ACTIONS.SET_SALES, payload: mappedSales });
       dispatch({ type: ACTIONS.SET_QUOTATIONS, payload: finalQuotations });
 
-      // Fetch customer_repairs
+      // Fetch customer_repairs safely
       try {
-        const { data: dbCustomerRepairs } = await supabase
+        const { data: dbCustomerRepairs, error: repErr } = await supabase
           .from('customer_repairs')
           .select('*')
           .order('id', { ascending: false });
-        const mappedCustomerRepairs = (dbCustomerRepairs || []).map(r => ({
-          id: r.id,
-          date: r.date,
-          customerName: r.customer_name,
-          customerPhone: r.customer_phone,
-          customerAddress: r.customer_address,
-          province: r.province || null,
-          locationUrl: r.location_url,
-          appointmentDate: r.appointment_date,
-          machineModel: r.machine_model,
-          symptoms: r.symptoms,
-          technician: r.technician,
-          status: r.status,
-          estimatedCost: r.estimated_cost,
-          actualCost: r.actual_cost,
-          notes: r.notes,
-        }));
-        dispatch({ type: ACTIONS.SET_CUSTOMER_REPAIRS, payload: mappedCustomerRepairs });
+        if (!repErr && Array.isArray(dbCustomerRepairs)) {
+          const mappedCustomerRepairs = dbCustomerRepairs.map(r => ({
+            id: r.id,
+            date: r.date,
+            customerName: r.customer_name,
+            customerPhone: r.customer_phone || '',
+            customerAddress: r.customer_address || '',
+            province: r.province || null,
+            locationUrl: r.location_url || '',
+            appointmentDate: r.appointment_date || '',
+            machineModel: r.machine_model,
+            symptoms: r.symptoms || '',
+            technician: r.technician || '',
+            status: r.status || 'รอนัดวัน',
+            estimatedCost: r.estimated_cost,
+            actualCost: r.actual_cost,
+            notes: r.notes || '',
+          }));
+          dispatch({ type: ACTIONS.SET_CUSTOMER_REPAIRS, payload: mappedCustomerRepairs });
+        } else if (repErr) {
+          console.warn('Supabase customer_repairs fetch note:', repErr.message);
+        }
       } catch (repairErr) {
         console.warn('Could not fetch customer_repairs:', repairErr.message);
       }
 
-      // Fetch shop_repairs
+      // Fetch shop_repairs safely
       try {
-        const { data: dbShopRepairs } = await supabase
+        const { data: dbShopRepairs, error: shopErr } = await supabase
           .from('shop_repairs')
           .select('*')
           .order('id', { ascending: false });
-        const mappedShopRepairs = (dbShopRepairs || []).map(r => ({
-          id: r.id,
-          date: r.date,
-          customerName: r.customer_name,
-          customerPhone: r.customer_phone,
-          customerAddress: r.customer_address,
-          province: r.province || null,
-          machineModel: r.machine_model,
-          symptoms: r.symptoms,
-          technician: r.technician,
-          status: r.status,
-          estimatedCost: r.estimated_cost,
-          actualCost: r.actual_cost,
-          notes: r.notes,
-        }));
-        dispatch({ type: ACTIONS.SET_SHOP_REPAIRS, payload: mappedShopRepairs });
+        if (!shopErr && Array.isArray(dbShopRepairs)) {
+          const mappedShopRepairs = dbShopRepairs.map(r => ({
+            id: r.id,
+            date: r.date,
+            customerName: r.customer_name,
+            customerPhone: r.customer_phone || '',
+            customerAddress: r.customer_address || '',
+            province: r.province || null,
+            machineModel: r.machine_model,
+            symptoms: r.symptoms || '',
+            technician: r.technician || '',
+            status: r.status || 'รอนัดวัน',
+            estimatedCost: r.estimated_cost,
+            actualCost: r.actual_cost,
+            notes: r.notes || '',
+          }));
+          dispatch({ type: ACTIONS.SET_SHOP_REPAIRS, payload: mappedShopRepairs });
+        } else if (shopErr) {
+          console.warn('Supabase shop_repairs fetch note:', shopErr.message);
+        }
       } catch (repairErr) {
         console.warn('Could not fetch shop_repairs:', repairErr.message);
       }
 
-      // Fetch customer_deliveries
+      // Fetch customer_deliveries safely
       try {
-        const { data: dbCustomerDeliveries } = await supabase
+        const { data: dbCustomerDeliveries, error: delivErr } = await supabase
           .from('customer_deliveries')
           .select('*')
           .order('id', { ascending: false });
-        const mappedCustomerDeliveries = (dbCustomerDeliveries || []).map(r => ({
-          id: r.id,
-          date: r.date,
-          customerName: r.customer_name,
-          customerPhone: r.customer_phone,
-          customerAddress: r.customer_address,
-          province: r.province || null,
-          locationUrl: r.location_url,
-          appointmentDate: r.appointment_date,
-          machineModel: r.machine_model,
-          symptoms: r.symptoms,
-          technician: r.technician,
-          status: r.status,
-          estimatedCost: r.estimated_cost,
-          actualCost: r.actual_cost,
-          notes: r.notes,
-        }));
-        dispatch({ type: ACTIONS.SET_CUSTOMER_DELIVERIES, payload: mappedCustomerDeliveries });
+        if (!delivErr && Array.isArray(dbCustomerDeliveries)) {
+          const mappedCustomerDeliveries = dbCustomerDeliveries.map(r => ({
+            id: r.id,
+            date: r.date,
+            customerName: r.customer_name,
+            customerPhone: r.customer_phone || '',
+            customerAddress: r.customer_address || '',
+            province: r.province || null,
+            locationUrl: r.location_url || '',
+            appointmentDate: r.appointment_date || '',
+            machineModel: r.machine_model,
+            symptoms: r.symptoms || '',
+            technician: r.technician || '',
+            status: r.status || 'รอนัดวัน',
+            estimatedCost: r.estimated_cost,
+            actualCost: r.actual_cost,
+            notes: r.notes || '',
+          }));
+          dispatch({ type: ACTIONS.SET_CUSTOMER_DELIVERIES, payload: mappedCustomerDeliveries });
+        } else if (delivErr) {
+          console.warn('Supabase customer_deliveries fetch note:', delivErr.message);
+        }
       } catch (delivErr) {
         console.warn('Could not fetch customer_deliveries:', delivErr.message);
       }
@@ -755,19 +771,192 @@ export function StoreProvider({ children }) {
     }
   }, []);
 
-  // Sync session authentication state to local storage
+  // Sync state to local storage for backup offline persistence
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ currentUser: state.currentUser }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        currentUser: state.currentUser,
+        customerRepairs: state.customerRepairs,
+        shopRepairs: state.shopRepairs,
+        customerDeliveries: state.customerDeliveries
+      }));
     } catch (err) {
       console.warn('ไม่สามารถบันทึกเซสชันลง localStorage ได้:', err);
     }
-  }, [state.currentUser]);
+  }, [state.currentUser, state.customerRepairs, state.shopRepairs, state.customerDeliveries]);
 
   // Load all initial database records on mount
   useEffect(() => {
     refreshData();
   }, [refreshData]);
+
+  // Realtime subscription for Supabase tables
+  useEffect(() => {
+    if (!supabase || typeof supabase.channel !== 'function') return;
+
+    const channel = supabase
+      .channel('repairs_realtime_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'customer_repairs' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const r = payload.new;
+            dispatch({
+              type: ACTIONS.ADD_CUSTOMER_REPAIR,
+              payload: {
+                id: r.id,
+                date: r.date,
+                customerName: r.customer_name,
+                customerPhone: r.customer_phone || '',
+                customerAddress: r.customer_address || '',
+                province: r.province || null,
+                locationUrl: r.location_url || '',
+                appointmentDate: r.appointment_date || '',
+                machineModel: r.machine_model,
+                symptoms: r.symptoms || '',
+                technician: r.technician || '',
+                status: r.status || 'รอนัดวัน',
+                estimatedCost: r.estimated_cost,
+                actualCost: r.actual_cost,
+                notes: r.notes || '',
+              }
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const r = payload.new;
+            dispatch({
+              type: ACTIONS.UPDATE_CUSTOMER_REPAIR,
+              payload: {
+                id: r.id,
+                date: r.date,
+                customerName: r.customer_name,
+                customerPhone: r.customer_phone || '',
+                customerAddress: r.customer_address || '',
+                province: r.province || null,
+                locationUrl: r.location_url || '',
+                appointmentDate: r.appointment_date || '',
+                machineModel: r.machine_model,
+                symptoms: r.symptoms || '',
+                technician: r.technician || '',
+                status: r.status || 'รอนัดวัน',
+                estimatedCost: r.estimated_cost,
+                actualCost: r.actual_cost,
+                notes: r.notes || '',
+              }
+            });
+          } else if (payload.eventType === 'DELETE') {
+            dispatch({ type: ACTIONS.DELETE_CUSTOMER_REPAIR, payload: payload.old.id });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'shop_repairs' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const r = payload.new;
+            dispatch({
+              type: ACTIONS.ADD_SHOP_REPAIR,
+              payload: {
+                id: r.id,
+                date: r.date,
+                customerName: r.customer_name,
+                customerPhone: r.customer_phone || '',
+                customerAddress: r.customer_address || '',
+                province: r.province || null,
+                machineModel: r.machine_model,
+                symptoms: r.symptoms || '',
+                technician: r.technician || '',
+                status: r.status || 'รอนัดวัน',
+                estimatedCost: r.estimated_cost,
+                actualCost: r.actual_cost,
+                notes: r.notes || '',
+              }
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const r = payload.new;
+            dispatch({
+              type: ACTIONS.UPDATE_SHOP_REPAIR,
+              payload: {
+                id: r.id,
+                date: r.date,
+                customerName: r.customer_name,
+                customerPhone: r.customer_phone || '',
+                customerAddress: r.customer_address || '',
+                province: r.province || null,
+                machineModel: r.machine_model,
+                symptoms: r.symptoms || '',
+                technician: r.technician || '',
+                status: r.status || 'รอนัดวัน',
+                estimatedCost: r.estimated_cost,
+                actualCost: r.actual_cost,
+                notes: r.notes || '',
+              }
+            });
+          } else if (payload.eventType === 'DELETE') {
+            dispatch({ type: ACTIONS.DELETE_SHOP_REPAIR, payload: payload.old.id });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'customer_deliveries' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const r = payload.new;
+            dispatch({
+              type: ACTIONS.ADD_CUSTOMER_DELIVERY,
+              payload: {
+                id: r.id,
+                date: r.date,
+                customerName: r.customer_name,
+                customerPhone: r.customer_phone || '',
+                customerAddress: r.customer_address || '',
+                province: r.province || null,
+                locationUrl: r.location_url || '',
+                appointmentDate: r.appointment_date || '',
+                machineModel: r.machine_model,
+                symptoms: r.symptoms || '',
+                technician: r.technician || '',
+                status: r.status || 'รอนัดวัน',
+                estimatedCost: r.estimated_cost,
+                actualCost: r.actual_cost,
+                notes: r.notes || '',
+              }
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const r = payload.new;
+            dispatch({
+              type: ACTIONS.UPDATE_CUSTOMER_DELIVERY,
+              payload: {
+                id: r.id,
+                date: r.date,
+                customerName: r.customer_name,
+                customerPhone: r.customer_phone || '',
+                customerAddress: r.customer_address || '',
+                province: r.province || null,
+                locationUrl: r.location_url || '',
+                appointmentDate: r.appointment_date || '',
+                machineModel: r.machine_model,
+                symptoms: r.symptoms || '',
+                technician: r.technician || '',
+                status: r.status || 'รอนัดวัน',
+                estimatedCost: r.estimated_cost,
+                actualCost: r.actual_cost,
+                notes: r.notes || '',
+              }
+            });
+          } else if (payload.eventType === 'DELETE') {
+            dispatch({ type: ACTIONS.DELETE_CUSTOMER_DELIVERY, payload: payload.old.id });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // ─── ASYNC ACTION MIDDLEWARE (Intercepts dispatch and updates database) ───
   const asyncDispatch = useCallback(async (action) => {
@@ -1157,6 +1346,7 @@ export function StoreProvider({ children }) {
 
       // ── Customer Repair CRUD ──────────────────────────────────
       else if (action.type === ACTIONS.ADD_CUSTOMER_REPAIR) {
+        dispatch(action);
         const r = action.payload;
         const { error } = await supabase.from('customer_repairs').insert({
           id: r.id,
@@ -1175,9 +1365,18 @@ export function StoreProvider({ children }) {
           actual_cost: r.actualCost ? Number(r.actualCost) : null,
           notes: r.notes || null,
         });
-        if (error) { console.error('Add customer repair error:', error); success = false; }
+        if (error) {
+          console.error('Add customer repair Supabase error:', error);
+          Swal.fire({
+            title: 'แจ้งเตือนการเชื่อมต่อฐานข้อมูล',
+            text: 'บันทึกในเครื่องเรียบร้อยแล้ว แต่ยังไม่สามารถบันทึกลง Supabase ได้: ' + (error.message || JSON.stringify(error)) + '\n(กรุณารันไฟล์ repair_tables.sql ใน Supabase SQL Editor)',
+            icon: 'warning',
+            confirmButtonText: 'ตกลง'
+          });
+        }
       }
       else if (action.type === ACTIONS.UPDATE_CUSTOMER_REPAIR) {
+        dispatch(action);
         const r = action.payload;
         const { error } = await supabase.from('customer_repairs').update({
           customer_name: r.customerName,
@@ -1194,15 +1393,25 @@ export function StoreProvider({ children }) {
           actual_cost: r.actualCost ? Number(r.actualCost) : null,
           notes: r.notes || null,
         }).eq('id', r.id);
-        if (error) { console.error('Update customer repair error:', error); success = false; }
+        if (error) {
+          console.error('Update customer repair Supabase error:', error);
+          Swal.fire({
+            title: 'แจ้งเตือนการเชื่อมต่อฐานข้อมูล',
+            text: 'อัปเดตในเครื่องเรียบร้อยแล้ว แต่ยังไม่สามารถบันทึกลง Supabase ได้: ' + (error.message || JSON.stringify(error)),
+            icon: 'warning',
+            confirmButtonText: 'ตกลง'
+          });
+        }
       }
       else if (action.type === ACTIONS.DELETE_CUSTOMER_REPAIR) {
+        dispatch(action);
         const { error } = await supabase.from('customer_repairs').delete().eq('id', action.payload);
-        if (error) { console.error('Delete customer repair error:', error); success = false; }
+        if (error) { console.error('Delete customer repair Supabase error:', error); }
       }
 
       // ── Shop Repair CRUD ──────────────────────────────────────
       else if (action.type === ACTIONS.ADD_SHOP_REPAIR) {
+        dispatch(action);
         const r = action.payload;
         const { error } = await supabase.from('shop_repairs').insert({
           id: r.id,
@@ -1219,9 +1428,18 @@ export function StoreProvider({ children }) {
           actual_cost: r.actualCost ? Number(r.actualCost) : null,
           notes: r.notes || null,
         });
-        if (error) { console.error('Add shop repair error:', error); success = false; }
+        if (error) {
+          console.error('Add shop repair Supabase error:', error);
+          Swal.fire({
+            title: 'แจ้งเตือนการเชื่อมต่อฐานข้อมูล',
+            text: 'บันทึกในเครื่องเรียบร้อยแล้ว แต่ยังไม่สามารถบันทึกลง Supabase ได้: ' + (error.message || JSON.stringify(error)) + '\n(กรุณารันไฟล์ repair_tables.sql ใน Supabase SQL Editor)',
+            icon: 'warning',
+            confirmButtonText: 'ตกลง'
+          });
+        }
       }
       else if (action.type === ACTIONS.UPDATE_SHOP_REPAIR) {
+        dispatch(action);
         const r = action.payload;
         const { error } = await supabase.from('shop_repairs').update({
           customer_name: r.customerName,
@@ -1236,15 +1454,25 @@ export function StoreProvider({ children }) {
           actual_cost: r.actualCost ? Number(r.actualCost) : null,
           notes: r.notes || null,
         }).eq('id', r.id);
-        if (error) { console.error('Update shop repair error:', error); success = false; }
+        if (error) {
+          console.error('Update shop repair Supabase error:', error);
+          Swal.fire({
+            title: 'แจ้งเตือนการเชื่อมต่อฐานข้อมูล',
+            text: 'อัปเดตในเครื่องเรียบร้อยแล้ว แต่ยังไม่สามารถบันทึกลง Supabase ได้: ' + (error.message || JSON.stringify(error)),
+            icon: 'warning',
+            confirmButtonText: 'ตกลง'
+          });
+        }
       }
       else if (action.type === ACTIONS.DELETE_SHOP_REPAIR) {
+        dispatch(action);
         const { error } = await supabase.from('shop_repairs').delete().eq('id', action.payload);
-        if (error) { console.error('Delete shop repair error:', error); success = false; }
+        if (error) { console.error('Delete shop repair Supabase error:', error); }
       }
 
       // ── Customer Delivery CRUD ────────────────────────────────
       else if (action.type === ACTIONS.ADD_CUSTOMER_DELIVERY) {
+        dispatch(action);
         const r = action.payload;
         const { error } = await supabase.from('customer_deliveries').insert({
           id: r.id,
@@ -1263,9 +1491,18 @@ export function StoreProvider({ children }) {
           actual_cost: r.actualCost ? Number(r.actualCost) : null,
           notes: r.notes || null,
         });
-        if (error) { console.error('Add customer delivery error:', error); success = false; }
+        if (error) {
+          console.error('Add customer delivery Supabase error:', error);
+          Swal.fire({
+            title: 'แจ้งเตือนการเชื่อมต่อฐานข้อมูล',
+            text: 'บันทึกในเครื่องเรียบร้อยแล้ว แต่ยังไม่สามารถบันทึกลง Supabase ได้: ' + (error.message || JSON.stringify(error)) + '\n(กรุณารันไฟล์ repair_tables.sql ใน Supabase SQL Editor)',
+            icon: 'warning',
+            confirmButtonText: 'ตกลง'
+          });
+        }
       }
       else if (action.type === ACTIONS.UPDATE_CUSTOMER_DELIVERY) {
+        dispatch(action);
         const r = action.payload;
         const { error } = await supabase.from('customer_deliveries').update({
           customer_name: r.customerName,
@@ -1282,16 +1519,20 @@ export function StoreProvider({ children }) {
           actual_cost: r.actualCost ? Number(r.actualCost) : null,
           notes: r.notes || null,
         }).eq('id', r.id);
-        if (error) { console.error('Update customer delivery error:', error); success = false; }
+        if (error) {
+          console.error('Update customer delivery Supabase error:', error);
+          Swal.fire({
+            title: 'แจ้งเตือนการเชื่อมต่อฐานข้อมูล',
+            text: 'อัปเดตในเครื่องเรียบร้อยแล้ว แต่ยังไม่สามารถบันทึกลง Supabase ได้: ' + (error.message || JSON.stringify(error)),
+            icon: 'warning',
+            confirmButtonText: 'ตกลง'
+          });
+        }
       }
       else if (action.type === ACTIONS.DELETE_CUSTOMER_DELIVERY) {
+        dispatch(action);
         const { error } = await supabase.from('customer_deliveries').delete().eq('id', action.payload);
-        if (error) { console.error('Delete customer delivery error:', error); success = false; }
-      }
-
-      // If the write to Supabase was successful, refresh client data from database
-      if (success) {
-        await refreshData();
+        if (error) { console.error('Delete customer delivery Supabase error:', error); }
       }
 
       // Execute local UI states directly (e.g. login/logout)
