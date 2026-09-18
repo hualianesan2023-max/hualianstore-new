@@ -1,0 +1,920 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Receipt Modal – A4 Invoice Layout (HUALIAN ESAN LTD.,PART.)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Overlay ────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 9999;
+  animation: receiptFadeIn 0.25s ease;
+  padding: 30px 10px;
+  overflow-y: auto;
+}
+
+.receipt-modal {
+  background: #1e1f2b;
+  border-radius: 12px;
+  width: 850px;
+  height: 90vh;
+  max-height: 90vh;
+  max-width: 95vw;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
+  animation: receiptSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+/* ── Receipt Paper Container ────────────────────────────────────── */
+.receipt-paper-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #14151f; /* dark workspace look behind paper */
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+/* ── Receipt Paper (A4 Canvas) ──────────────────────────────────── */
+.receipt-paper {
+  width: 210mm;
+  height: 297mm;
+  min-height: 297mm;
+  box-sizing: border-box;
+  padding: 18mm 15mm 12mm; /* Professional margins */
+  background: #ffffff;
+  color: #111111;
+  margin: 0 auto;
+  position: relative;
+  font-family: 'Segoe UI', Tahoma, Thonburi, 'Noto Sans Thai', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: text;
+}
+
+/* ── Letterhead Header ───────────────────────────────────────────── */
+.receipt-letterhead {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  border-bottom: 1.5px solid #b28c3a;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.receipt-logo-container {
+  width: 76px;
+  height: 76px;
+  flex-shrink: 0;
+}
+
+.receipt-logo-svg,
+.receipt-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.receipt-company-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.receipt-company-info .company-name {
+  font-size: 16.5px;
+  font-weight: 700;
+  color: #000000;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.receipt-company-info .company-address {
+  font-size: 12.5px;
+  color: #333333;
+  margin: 0;
+}
+
+.receipt-company-info .company-contact {
+  font-size: 12.5px;
+  color: #333333;
+  margin: 0;
+}
+
+/* ── Document Title ─────────────────────────────────────────────── */
+.receipt-title-block {
+  text-align: center;
+  margin-bottom: 15px;
+}
+
+.receipt-title-block .title-th {
+  font-size: 19px;
+  font-weight: bold;
+  color: #000000;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+.receipt-title-block .title-en {
+  font-size: 12px;
+  font-weight: normal;
+  color: #555555;
+  margin: 2px 0 0;
+  text-transform: capitalize;
+}
+
+/* ── Grid Boxes (Customer & Invoice info) ───────────────────────── */
+.receipt-grid {
+  display: grid;
+  grid-template-columns: 6.8fr 3.2fr;
+  gap: 15px;
+  margin-bottom: 10px;
+}
+
+.grid-customer-box,
+.grid-invoice-box {
+  border: 1.5px solid #b28c3a;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  background-color: #fdfdfd;
+}
+
+.grid-invoice-box {
+  padding: 0; /* Box splits are handled by line borders */
+}
+
+.receipt-grid .info-row {
+  display: flex;
+  font-size: 12.5px;
+  color: #111111;
+  line-height: 1.5;
+}
+
+.grid-customer-box .info-row {
+  margin: 2.5px 0;
+}
+
+.grid-customer-box .info-label {
+  width: 190px;
+  flex-shrink: 0;
+  color: #000000;
+}
+
+.grid-customer-box .info-val {
+  flex: 1;
+  color: #111111;
+  word-break: break-word;
+}
+
+.grid-invoice-box .info-row {
+  padding: 6px 12px;
+}
+
+.grid-invoice-box .info-row.split {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.grid-invoice-box .info-label {
+  color: #000000;
+}
+
+.grid-invoice-box .info-val {
+  text-align: right;
+  color: #111111;
+}
+
+.grid-invoice-box .border-top {
+  border-top: 1px dashed #b28c3a;
+}
+
+.text-blue {
+  color: #1d4ed8 !important; /* Elegant blue */
+}
+
+/* ── Items Table ────────────────────────────────────────────────── */
+.receipt-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1.5px solid #b28c3a;
+  margin-bottom: 10px;
+  table-layout: fixed;
+  background-color: #ffffff;
+}
+
+.receipt-items-table th {
+  border: 1.2px solid #b28c3a;
+  background-color: #fbf8f2;
+  color: #000000;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 4px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.receipt-items-table th .sub-th {
+  font-size: 9px;
+  font-weight: normal;
+  color: #555555;
+}
+
+.receipt-items-table td {
+  border-left: 1.2px solid #b28c3a;
+  border-right: 1.2px solid #b28c3a;
+  border-bottom: 1.2px dashed rgba(178, 140, 58, 0.25);
+  padding: 7px 8px;
+  font-size: 12.5px;
+  color: #111111;
+  height: 29px; /* Fixed height for A4 formatting */
+  vertical-align: middle;
+  word-wrap: break-word;
+  white-space: normal;
+}
+
+.receipt-items-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.receipt-items-table .item-description-cell {
+  text-align: left;
+  line-height: 1.35;
+}
+
+.receipt-items-table .item-discount-label {
+  font-size: 10px;
+  color: #ef4444;
+  font-weight: 500;
+}
+
+.receipt-items-table .empty-row td {
+  color: transparent !important;
+}
+
+/* ── Bottom Section Grid ────────────────────────────────────────── */
+.receipt-bottom-grid {
+  display: grid;
+  grid-template-columns: 6.8fr 3.2fr;
+  gap: 15px;
+  margin-bottom: 10px;
+}
+
+.bottom-left-box,
+.bottom-right-box {
+  border: 1.5px solid #b28c3a;
+  background-color: #fdfdfd;
+}
+
+.bottom-left-box {
+  display: flex;
+  flex-direction: column;
+}
+
+.bottom-left-box .border-top {
+  border-top: 1.5px solid #b28c3a;
+}
+
+.word-amount-row {
+  padding: 8px 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 12.5px;
+}
+
+.word-amount-val {
+  font-style: italic;
+  color: #000000;
+  font-size: 13px;
+}
+
+.payment-terms-box {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.payment-terms-box .terms-title {
+  font-size: 12.5px;
+  color: #000000;
+  margin-bottom: 2px;
+}
+
+.checkbox-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.checkbox-row.transfer-row {
+  align-items: flex-start;
+  margin-top: 4px;
+}
+
+/* Custom Checkbox Design */
+.checkbox-container {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  padding-left: 20px;
+  font-size: 12px;
+  color: #000000;
+  cursor: default;
+  user-select: none;
+}
+
+.checkbox-container input {
+  position: absolute;
+  opacity: 0;
+  height: 0;
+  width: 0;
+}
+
+.checkmark {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 12px;
+  width: 12px;
+  border: 1.2px solid #b28c3a;
+  background-color: #ffffff;
+  box-sizing: border-box;
+}
+
+.checkbox-container input:checked ~ .checkmark::after {
+  content: "✓";
+  position: absolute;
+  left: 1px;
+  top: -4.5px;
+  font-size: 12px;
+  color: #b28c3a;
+  font-weight: bold;
+}
+
+.bank-info-details {
+  font-size: 11px;
+  color: #333333;
+  line-height: 1.4;
+  margin-top: -1px;
+}
+
+/* Right calculation column styling */
+.bottom-right-box {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.bottom-right-box .calc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.bottom-right-box .calc-label {
+  color: #000000;
+}
+
+.bottom-right-box .calc-val {
+  text-align: right;
+  color: #111111;
+}
+
+.bottom-right-box .border-top {
+  border-top: 1px dashed #b28c3a;
+}
+
+.bottom-right-box .highlight-paid {
+  background-color: #fff2f2;
+}
+
+.bottom-right-box .highlight-balance {
+  background-color: #f2f7ff;
+}
+
+.text-red {
+  color: #dc2626 !important; /* Proper printing red */
+}
+
+.text-blue {
+  color: #1d4ed8 !important; /* Proper printing blue */
+}
+
+/* ── Footer Notice ──────────────────────────────────────────────── */
+.receipt-footer-notice {
+  text-align: center;
+  font-size: 12px;
+  color: #000000;
+  margin: 8px 0 10px;
+  line-height: 1.4;
+}
+
+.receipt-footer-notice .sub-notice {
+  font-size: 11px;
+  color: #555555;
+  margin: 2px 0 0;
+}
+
+/* ── Signatures & Stamp Block ───────────────────────────────────── */
+.receipt-signatures-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-top: 45px; /* Clean gap below the footer notice, rather than sitting at absolute bottom */
+  padding: 15px 20px 5px;
+  position: relative;
+}
+
+.signature-column {
+  width: 28%;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.signature-line-name {
+  font-family: 'Georgia', 'Times New Roman', serif;
+  font-size: 15px;
+  font-style: italic;
+  font-weight: bold;
+  color: #1d4ed8;
+  height: 26px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 2px;
+  letter-spacing: 0.5px;
+}
+
+.signature-line-border {
+  width: 100%;
+  border-bottom: 1.2px solid #000000;
+  margin: 4px 0 8px;
+}
+
+.signature-label {
+  font-size: 12px;
+  color: #000000;
+  display: block;
+}
+
+.signature-date {
+  font-size: 11.5px;
+  color: #333333;
+  margin-top: 6px;
+}
+
+/* Realistic Stamp Watermark Overlay */
+.receipt-stamp-watermark {
+  position: absolute;
+  left: 20%;
+  bottom: 0px;
+  width: 108px;
+  height: 108px;
+  pointer-events: none;
+  transform: rotate(-10deg);
+  z-index: 5;
+  user-select: none;
+}
+
+.receipt-stamp-svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Printing timestamp ─────────────────────────────────────────── */
+.receipt-print-timestamp {
+  position: absolute;
+  bottom: 5px;
+  right: 15mm;
+  font-size: 10px;
+  color: #777777;
+}
+
+/* ── Action Buttons ─────────────────────────────────────────────── */
+.receipt-actions {
+  display: flex;
+  gap: 12px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+  justify-content: center;
+}
+
+.receipt-actions .btn {
+  padding: 11px 24px;
+  border-radius: 8px;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.receipt-actions .btn-primary {
+  background: linear-gradient(135deg, #d97706, #b28c3a);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(178, 140, 58, 0.25);
+}
+
+.receipt-actions .btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(178, 140, 58, 0.35);
+}
+
+.receipt-actions .btn-secondary {
+  background: transparent;
+  color: #a3a3a3;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.receipt-actions .btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f3f3f3;
+}
+
+/* ── Screen responsiveness ──────────────────────────────────────── */
+@media (max-width: 840px) {
+  .receipt-modal {
+    width: 98vw;
+    margin: 10px auto;
+  }
+  .receipt-paper {
+    transform: scale(0.95);
+    transform-origin: top center;
+    margin-bottom: -50px; /* Offset scaled space */
+  }
+}
+
+@media (max-width: 768px) {
+  .receipt-paper {
+    transform: scale(0.8);
+    margin-bottom: -200px;
+  }
+}
+
+@media (max-width: 580px) {
+  .receipt-paper {
+    transform: scale(0.55);
+    margin-bottom: -400px;
+  }
+}
+
+@keyframes receiptFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes receiptSlideUp {
+  from { opacity: 0; transform: translateY(30px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Print Styles (A4 Page Output) ──────────────────────────────── */
+@media print {
+  /* Set A4 portrait size and zero page margins to suppress default browser headers/footers */
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  /* Force white background on html and body to remove dark theme backgrounds when printing the receipt */
+  body.print-receipt-active,
+  body.print-receipt-active html {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide all other application components and pages to ensure 0 height and no blank pages when printing receipt */
+  body.print-receipt-active .sidebar,
+  body.print-receipt-active .pos-products,
+  body.print-receipt-active .pos-cart,
+  body.print-receipt-active .pos-toast,
+  body.print-receipt-active .products-page,
+  body.print-receipt-active .customers-page,
+  body.print-receipt-active .profit-loss-page,
+  body.print-receipt-active .users-page,
+  body.print-receipt-active .page-container {
+    display: none !important;
+  }
+
+  /* Reset all wrapper layouts to flow naturally and occupy 0 extra space when printing receipt */
+  body.print-receipt-active #root,
+  body.print-receipt-active .app-container,
+  body.print-receipt-active .main-content,
+  body.print-receipt-active .pos-container {
+    display: block !important;
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: none !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Hide everything else inside body using visibility when printing receipt */
+  body.print-receipt-active * {
+    visibility: hidden;
+    background: none !important;
+  }
+
+  body.print-receipt-active .modal-overlay,
+  body.print-receipt-active .receipt-modal,
+  body.print-receipt-active .receipt-paper-container,
+  body.print-receipt-active .receipt-paper,
+  body.print-receipt-active .receipt-paper * {
+    visibility: visible;
+  }
+
+  /* Make modal overlay and wrappers transparent static boxes that do not clip when printing receipt */
+  body.print-receipt-active .modal-overlay,
+  body.print-receipt-active .receipt-modal,
+  body.print-receipt-active .receipt-paper-container {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* Define exact A4 dimensions with zero margins on @page and padding on the element to act as margins */
+  .receipt-paper {
+    position: relative !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    min-height: 297mm !important;
+    max-height: 297mm !important;
+    box-sizing: border-box !important;
+    padding: 15mm 15mm 12mm !important;
+    margin: 0 auto !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: none !important; /* Reset screen scale factor */
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    page-break-inside: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* Hide action buttons when printing */
+  .receipt-actions {
+    display: none !important;
+  }
+
+  /* ── Compact Letterhead ── */
+  .receipt-letterhead {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    border-bottom: 1.5px solid #b28c3a !important;
+    padding-bottom: 4px !important;
+    margin-bottom: 8px !important;
+  }
+  .receipt-logo-container {
+    width: 55px !important;
+    height: 55px !important;
+  }
+  .receipt-company-info .company-name {
+    font-size: 14px !important;
+    line-height: 1.2 !important;
+  }
+  .receipt-company-info .company-address,
+  .receipt-company-info .company-contact {
+    font-size: 10.5px !important;
+    line-height: 1.3 !important;
+  }
+
+  /* ── Compact Title Block ── */
+  .receipt-title-block {
+    margin-bottom: 8px !important;
+    text-align: center !important;
+  }
+  .receipt-title-block .title-th {
+    font-size: 16px !important;
+  }
+  .receipt-title-block .title-en {
+    font-size: 10.5px !important;
+    margin-top: 1px !important;
+  }
+
+  /* ── Compact Customer & Invoice Grid ── */
+  .receipt-grid {
+    display: grid !important;
+    grid-template-columns: 6.8fr 3.2fr !important;
+    gap: 10px !important;
+    margin-bottom: 8px !important;
+  }
+  .grid-customer-box,
+  .grid-invoice-box {
+    padding: 4px 8px !important;
+    border-width: 1.2px !important;
+  }
+  .grid-invoice-box .info-row {
+    padding: 3px 8px !important;
+  }
+  .grid-invoice-box .border-top {
+    border-top-width: 1px !important;
+  }
+  .receipt-grid .info-row {
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+  }
+  .grid-customer-box .info-label {
+    width: 160px !important;
+  }
+
+  /* ── Compact Items Table ── */
+  .receipt-items-table {
+    margin-bottom: 8px !important;
+    border-width: 1.2px !important;
+  }
+  .receipt-items-table th {
+    padding: 4px 2px !important;
+    font-size: 11px !important;
+    border-width: 1px !important;
+  }
+  .receipt-items-table th .sub-th {
+    font-size: 8.5px !important;
+  }
+  .receipt-items-table td {
+    padding: 4px 6px !important;
+    font-size: 11.5px !important;
+    height: 24px !important;
+    border-left-width: 1px !important;
+    border-right-width: 1px !important;
+    border-bottom-width: 1px !important;
+  }
+
+  /* Force background colors to print correctly (borders, headers, and colored values) */
+  .receipt-items-table th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background-color: #fbf8f2 !important;
+  }
+
+  /* ── Compact Bottom Grid ── */
+  .receipt-bottom-grid {
+    display: grid !important;
+    grid-template-columns: 6.8fr 3.2fr !important;
+    gap: 10px !important;
+    margin-bottom: 8px !important;
+  }
+  .bottom-left-box,
+  .bottom-right-box {
+    border-width: 1.2px !important;
+  }
+  .bottom-left-box .border-top {
+    border-top-width: 1.2px !important;
+  }
+  .word-amount-row {
+    padding: 4px 8px !important;
+    font-size: 11px !important;
+  }
+  .word-amount-val {
+    font-size: 11.5px !important;
+  }
+  .payment-terms-box {
+    padding: 4px 8px !important;
+    gap: 3px !important;
+  }
+  .payment-terms-box .terms-title {
+    font-size: 11px !important;
+  }
+  .checkbox-row {
+    gap: 12px !important;
+  }
+  .checkbox-container {
+    font-size: 10.5px !important;
+    padding-left: 16px !important;
+  }
+  .checkmark {
+    height: 10px !important;
+    width: 10px !important;
+  }
+  .checkbox-container input:checked ~ .checkmark::after {
+    font-size: 10px !important;
+    left: 1px !important;
+    top: -5px !important;
+  }
+  .bank-info-details {
+    font-size: 9.5px !important;
+  }
+  .bottom-right-box .calc-row {
+    padding: 3px 8px !important;
+    font-size: 11.5px !important;
+  }
+  .bottom-right-box .border-top {
+    border-top-width: 1px !important;
+  }
+
+  .bottom-right-box .highlight-paid {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background-color: #fff2f2 !important;
+  }
+
+  .bottom-right-box .highlight-balance {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background-color: #f2f7ff !important;
+  }
+
+  .text-red {
+    color: #dc2626 !important;
+  }
+
+  .text-blue {
+    color: #1d4ed8 !important;
+  }
+
+  /* ── Compact Footer Notice ── */
+  .receipt-footer-notice {
+    margin: 4px 0 6px !important;
+    font-size: 11px !important;
+    line-height: 1.3 !important;
+  }
+  .receipt-footer-notice .sub-notice {
+    font-size: 9.5px !important;
+    margin-top: 1px !important;
+  }
+
+  /* ── Compact & Aligned Signatures Block ── */
+  .receipt-signatures-container {
+    margin-top: 35px !important; /* Clean gap below the footer notice for printing */
+    padding: 10px 15px 5px !important;
+    border-top: none !important;
+  }
+  .signature-column {
+    width: 28% !important;
+  }
+  .signature-line-name {
+    font-size: 14px !important;
+    height: 22px !important;
+  }
+  .signature-line-border {
+    margin: 2px 0 4px !important;
+    border-bottom-width: 1px !important;
+  }
+  .signature-label {
+    font-size: 11px !important;
+  }
+  .signature-date {
+    font-size: 10.5px !important;
+    margin-top: 4px !important;
+  }
+  .receipt-stamp-watermark {
+    width: 90px !important;
+    height: 90px !important;
+    bottom: -5px !important;
+    left: 22% !important;
+  }
+
+  /* ── Compact Printing Timestamp ── */
+  .receipt-print-timestamp {
+    position: absolute !important;
+    bottom: 4mm !important;
+    right: 15mm !important;
+    font-size: 9.5px !important;
+    color: #555555 !important;
+  }
+}
