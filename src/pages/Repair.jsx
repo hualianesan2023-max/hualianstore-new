@@ -12,6 +12,56 @@ export const TECHNICIANS = [
   'ช่างเท่ง',
 ];
 
+// ── Thai Provinces List (รายชื่อจังหวัด 77 จังหวัด) ───────────
+export const THAI_PROVINCES = [
+  'นครราชสีมา', 'ขอนแก่น', 'บุรีรัมย์', 'สุรินทร์', 'อุบลราชธานี',
+  'อุดรธานี', 'ชัยภูมิ', 'มหาสารคาม', 'ร้อยเอ็ด', 'ศรีสะเกษ',
+  'สกลนคร', 'นครพนม', 'มุกดาหาร', 'ยโสธร', 'หนองคาย',
+  'หนองบัวลำภู', 'อำนาจเจริญ', 'บึงกาฬ', 'เลย', 'กาฬสินธุ์',
+  'กรุงเทพมหานคร', 'นนทบุรี', 'ปทุมธานี', 'สมุทรปราการ', 'สมุทรสาคร',
+  'พระนครศรีอยุธยา', 'สระบุรี', 'ลพบุรี', 'นครนายก', 'ปราจีนบุรี',
+  'ฉะเชิงเทรา', 'ชลบุรี', 'ระยอง', 'จันทบุรี', 'ตราด',
+  'สระแก้ว', 'เพชรบูรณ์', 'พิษณุโลก', 'นครสวรรค์', 'กำแพงเพชร',
+  'พิจิตร', 'สุโขทัย', 'อุทัยธานี', 'ตาก', 'เชียงใหม่',
+  'เชียงราย', 'ลำปาง', 'ลำพูน', 'แพร่', 'น่าน',
+  'พะเยา', 'แม่ฮ่องสอน', 'กาญจนบุรี', 'ราชบุรี', 'สุพรรณบุรี',
+  'เพชรบุรี', 'ประจวบคีรีขันธ์', 'สมุทรสงคราม', 'นครปฐม', 'สิงห์บุรี',
+  'อ่างทอง', 'ชัยนาท', 'นครศรีธรรมราช', 'สงขลา', 'สุราษฎร์ธานี',
+  'ภูเก็ต', 'กระบี่', 'พังงา', 'ตรัง', 'พัทลุง',
+  'ชุมพร', 'ระนอง', 'สตูล', 'ปัตตานี', 'ยะลา', 'นราธิวาส'
+];
+
+export const QUICK_PROVINCES = [
+  'นครราชสีมา', 'ขอนแก่น', 'บุรีรัมย์', 'สุรินทร์', 'อุบลราชธานี', 'สระบุรี', 'อุดรธานี', 'กรุงเทพมหานคร'
+];
+
+// Helper: ดึงหรือตรวจหาชื่อจังหวัดจาก record หรือ address
+export const detectProvince = (record) => {
+  if (record?.province && String(record.province).trim()) {
+    let p = String(record.province).trim().replace(/^จ\.|^จังหวัด/, '').trim();
+    if (p === 'โคราช') p = 'นครราชสีมา';
+    if (p === 'กทม' || p === 'กทม.') p = 'กรุงเทพมหานคร';
+    if (p === 'อยุธยา') p = 'พระนครศรีอยุธยา';
+    return p;
+  }
+  const textPool = [
+    record?.customerAddress,
+    record?.customerName,
+    record?.notes,
+    record?.symptoms,
+    record?.locationUrl
+  ].filter(Boolean).join(' ');
+
+  if (!textPool) return '';
+  if (textPool.includes('โคราช')) return 'นครราชสีมา';
+  if (textPool.includes('กทม') || textPool.includes('กรุงเทพ')) return 'กรุงเทพมหานคร';
+  if (textPool.includes('อยุธยา')) return 'พระนครศรีอยุธยา';
+  for (const p of THAI_PROVINCES) {
+    if (textPool.includes(p)) return p;
+  }
+  return '';
+};
+
 // ── Status Config ─────────────────────────────────────────
 const STATUSES = [
   { value: 'รอนัดวัน',     label: 'รอนัดวัน',     color: '#f59e0b', bg: 'rgba(245,158,11,0.15)',  icon: '🕐' },
@@ -77,6 +127,7 @@ const RepairJobReceipt = ({ record, store, onClose }) => {
   if (!record) return null;
 
   const statusObj = getStatus(record.status);
+  const province = detectProvince(record);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -123,7 +174,7 @@ const RepairJobReceipt = ({ record, store, onClose }) => {
               </div>
               <div className="rr-info-row">
                 <span className="rr-label">ชื่อลูกค้า:</span>
-                <span className="rr-value">{record.customerName}</span>
+                <span className="rr-value">{record.customerName} {province ? `(จ.${province})` : ''}</span>
                 <span className="rr-label">เบอร์โทร:</span>
                 <span className="rr-value">{record.customerPhone || '-'}</span>
               </div>
@@ -242,6 +293,7 @@ const RepairFormModal = ({ mode, record, onClose, onSave, activeTab }) => {
     customerName:    record?.customerName    || '',
     customerPhone:   record?.customerPhone   || '',
     customerAddress: record?.customerAddress || '',
+    province:        record?.province        || detectProvince(record) || '',
     locationUrl:     record?.locationUrl     || '',
     appointmentDate: record?.appointmentDate || '',
     machineModel:    record?.machineModel    || '',
@@ -295,7 +347,7 @@ const RepairFormModal = ({ mode, record, onClose, onSave, activeTab }) => {
         <form onSubmit={handleSubmit} className="repair-form">
           {/* Customer Info */}
           <div className="repair-form-section">
-            <span className="repair-form-section-title">👤 ข้อมูลลูกค้า</span>
+            <span className="repair-form-section-title">👤 ข้อมูลลูกค้าและสถานที่</span>
             <div className="repair-form-row">
               <div className="repair-form-group">
                 <label>ชื่อลูกค้า *</label>
@@ -306,18 +358,53 @@ const RepairFormModal = ({ mode, record, onClose, onSave, activeTab }) => {
                 <input value={form.customerPhone} onChange={set('customerPhone')} placeholder="0xx-xxx-xxxx" />
               </div>
             </div>
+
+            <div className="repair-form-row">
+              <div className="repair-form-group">
+                <label>📍 จังหวัด (ปลายทางที่จะไป)</label>
+                <input
+                  list="provinces-list"
+                  value={form.province}
+                  onChange={set('province')}
+                  placeholder="พิมพ์หรือเลือกจังหวัด เช่น ขอนแก่น, โคราช, สระบุรี..."
+                />
+                <datalist id="provinces-list">
+                  {THAI_PROVINCES.map(p => (
+                    <option key={p} value={p} />
+                  ))}
+                </datalist>
+                <div className="repair-quick-provinces">
+                  <span className="repair-quick-label">⚡ เลือกด่วน:</span>
+                  {QUICK_PROVINCES.map(p => (
+                    <button
+                      key={p}
+                      type="button"
+                      className={`repair-quick-prov-btn ${form.province === p ? 'active' : ''}`}
+                      onClick={() => setForm(f => ({ ...f, province: p }))}
+                    >
+                      {p === 'นครราชสีมา' ? 'โคราช' : p === 'กรุงเทพมหานคร' ? 'กทม.' : p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="repair-form-group">
+                {(isCustomer || isDelivery) ? (
+                  <>
+                    <label>📍 ลิงก์โลเคชั่นแผนที่ (Google Maps)</label>
+                    <input value={form.locationUrl} onChange={set('locationUrl')}
+                      placeholder="https://maps.app.goo.gl/... หรือ พิกัด GPS" />
+                  </>
+                ) : (
+                  <div></div>
+                )}
+              </div>
+            </div>
+
             <div className="repair-form-group">
               <label>ที่อยู่ {isDelivery ? 'จัดส่ง' : 'ออกไปซ่อม'}</label>
               <textarea value={form.customerAddress} onChange={set('customerAddress')} rows={2}
                 placeholder={isDelivery ? "ที่อยู่สำหรับจัดส่งเครื่องและติดตั้ง..." : "ที่อยู่สำหรับออกไปซ่อม/จัดส่ง..."} />
             </div>
-            {(isCustomer || isDelivery) && (
-              <div className="repair-form-group">
-                <label>📍 ลิงก์โลเคชั่นแผนที่ (Google Maps)</label>
-                <input value={form.locationUrl} onChange={set('locationUrl')}
-                  placeholder="https://maps.app.goo.gl/... หรือ พิกัด GPS" />
-              </div>
-            )}
           </div>
 
           {/* Machine / Work Details */}
@@ -417,6 +504,7 @@ const RepairTable = ({ items, onEdit, onDelete, onStatusChange, activeTab }) => 
           <tr>
             <th>รหัสงาน</th>
             <th>ลูกค้า</th>
+            <th className="repair-th-province">📍 จังหวัดที่จะไป</th>
             <th>{isDelivery ? 'เครื่อง / รายการส่ง' : 'เครื่อง / อาการ'}</th>
             {(isCustomer || isDelivery) && <th>{isDelivery ? 'วันนัดส่ง' : 'วันนัด'}</th>}
             <th>{isDelivery ? 'ช่างผู้ส่ง' : 'ช่าง'}</th>
@@ -426,66 +514,81 @@ const RepairTable = ({ items, onEdit, onDelete, onStatusChange, activeTab }) => 
           </tr>
         </thead>
         <tbody>
-          {items.map(r => (
-            <tr key={r.id}>
-              <td className="repair-id-cell">
-                <span className="repair-id">{r.id}</span>
-                <span className="repair-date-sub">{r.date}</span>
-              </td>
-              <td>
-                <div className="repair-customer-cell">
-                  <span className="repair-cust-name">{r.customerName}</span>
-                  {r.customerPhone && <span className="repair-cust-phone">📞 {r.customerPhone}</span>}
-                  {(isCustomer || isDelivery) && r.locationUrl && (
-                    <a href={r.locationUrl} target="_blank" rel="noreferrer" className="repair-location-link">
-                      📍 โลเคชั่น
-                    </a>
+          {items.map(r => {
+            const province = detectProvince(r);
+            return (
+              <tr key={r.id}>
+                <td className="repair-id-cell">
+                  <span className="repair-id">{r.id}</span>
+                  <span className="repair-date-sub">{r.date}</span>
+                </td>
+                <td>
+                  <div className="repair-customer-cell">
+                    <span className="repair-cust-name">{r.customerName}</span>
+                    {r.customerPhone && <span className="repair-cust-phone">📞 {r.customerPhone}</span>}
+                    {(isCustomer || isDelivery) && r.locationUrl && (
+                      <a href={r.locationUrl} target="_blank" rel="noreferrer" className="repair-location-link">
+                        📍 โลเคชั่น
+                      </a>
+                    )}
+                  </div>
+                </td>
+                <td className="repair-province-cell">
+                  {province ? (
+                    <div className="repair-province-badge-large" title={`จังหวัด: ${province}`}>
+                      <span className="repair-province-pin">📍</span>
+                      <span className="repair-province-name">จ.{province}</span>
+                    </div>
+                  ) : (
+                    <span className="repair-province-none">
+                      {activeTab === 'shop' ? '🏪 ซ่อมหน้าร้าน' : '— ไม่ระบุ —'}
+                    </span>
                   )}
-                </div>
-              </td>
-              <td>
-                <div className="repair-machine-cell">
-                  <span className="repair-machine-name">{r.machineModel}</span>
-                  {r.symptoms && <span className="repair-symptoms-sub">{r.symptoms}</span>}
-                </div>
-              </td>
-              {(isCustomer || isDelivery) && (
-                <td className="repair-date-cell">{r.appointmentDate || '-'}</td>
-              )}
-              <td>
-                <span className="repair-tech-badge">{r.technician || '-'}</span>
-              </td>
-              <td>
-                <div className="repair-cost-cell">
-                  {Number(r.actualCost) > 0
-                    ? <span className="repair-cost-actual">฿{Number(r.actualCost).toLocaleString()}</span>
-                    : Number(r.estimatedCost) > 0
-                      ? <span className="repair-cost-est">~฿{Number(r.estimatedCost).toLocaleString()}</span>
-                      : <span className="repair-cost-none">-</span>
-                  }
-                </div>
-              </td>
-              <td>
-                <div className="repair-status-wrap">
-                  <StatusBadge status={r.status} />
-                  <select
-                    className="repair-status-mini-select"
-                    value={r.status}
-                    onChange={(e) => onStatusChange(r.id, e.target.value)}
-                    title="เปลี่ยนสถานะ"
-                  >
-                    {STATUSES.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
-                  </select>
-                </div>
-              </td>
-              <td>
-                <div className="repair-action-btns">
-                  <button className="repair-action-btn edit" onClick={() => onEdit(r)} title="แก้ไข">✏️</button>
-                  <button className="repair-action-btn delete" onClick={() => onDelete(r.id)} title="ลบ">🗑️</button>
-                </div>
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td>
+                  <div className="repair-machine-cell">
+                    <span className="repair-machine-name">{r.machineModel}</span>
+                    {r.symptoms && <span className="repair-symptoms-sub">{r.symptoms}</span>}
+                  </div>
+                </td>
+                {(isCustomer || isDelivery) && (
+                  <td className="repair-date-cell">{r.appointmentDate || '-'}</td>
+                )}
+                <td>
+                  <span className="repair-tech-badge">{r.technician || '-'}</span>
+                </td>
+                <td>
+                  <div className="repair-cost-cell">
+                    {Number(r.actualCost) > 0
+                      ? <span className="repair-cost-actual">฿{Number(r.actualCost).toLocaleString()}</span>
+                      : Number(r.estimatedCost) > 0
+                        ? <span className="repair-cost-est">~฿{Number(r.estimatedCost).toLocaleString()}</span>
+                        : <span className="repair-cost-none">-</span>
+                    }
+                  </div>
+                </td>
+                <td>
+                  <div className="repair-status-wrap">
+                    <StatusBadge status={r.status} />
+                    <select
+                      className="repair-status-mini-select"
+                      value={r.status}
+                      onChange={(e) => onStatusChange(r.id, e.target.value)}
+                      title="เปลี่ยนสถานะ"
+                    >
+                      {STATUSES.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
+                    </select>
+                  </div>
+                </td>
+                <td>
+                  <div className="repair-action-btns">
+                    <button className="repair-action-btn edit" onClick={() => onEdit(r)} title="แก้ไข">✏️</button>
+                    <button className="repair-action-btn delete" onClick={() => onDelete(r.id)} title="ลบ">🗑️</button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -531,13 +634,18 @@ const Repair = () => {
     if (statusFilter !== 'all') list = list.filter(r => r.status === statusFilter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      list = list.filter(r =>
-        r.customerName?.toLowerCase().includes(q) ||
-        r.customerPhone?.includes(q) ||
-        r.machineModel?.toLowerCase().includes(q) ||
-        r.technician?.toLowerCase().includes(q) ||
-        r.id?.toLowerCase().includes(q)
-      );
+      list = list.filter(r => {
+        const prov = detectProvince(r).toLowerCase();
+        return (
+          r.customerName?.toLowerCase().includes(q) ||
+          r.customerPhone?.includes(q) ||
+          r.machineModel?.toLowerCase().includes(q) ||
+          r.technician?.toLowerCase().includes(q) ||
+          r.province?.toLowerCase().includes(q) ||
+          prov.includes(q) ||
+          r.id?.toLowerCase().includes(q)
+        );
+      });
     }
     return list;
   }, [currentList, statusFilter, searchQuery]);
@@ -645,7 +753,7 @@ const Repair = () => {
         <span className="repair-search-icon">🔍</span>
         <input
           className="repair-search-input"
-          placeholder="ค้นหาชื่อลูกค้า, เบอร์, รุ่นเครื่อง, ช่าง, รหัสงาน..."
+          placeholder="ค้นหาชื่อลูกค้า, จังหวัด, เบอร์, รุ่นเครื่อง, ช่าง, รหัสงาน..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
         />
@@ -687,4 +795,5 @@ const Repair = () => {
 };
 
 export default Repair;
+
 

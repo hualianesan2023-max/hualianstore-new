@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS customer_repairs (
   customer_name     TEXT NOT NULL,
   customer_phone    TEXT,
   customer_address  TEXT,
+  province          TEXT,
   location_url      TEXT,
   appointment_date  DATE,
   machine_model     TEXT NOT NULL,
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS shop_repairs (
   customer_name     TEXT NOT NULL,
   customer_phone    TEXT,
   customer_address  TEXT,
+  province          TEXT,
   machine_model     TEXT NOT NULL,
   symptoms          TEXT,
   technician        TEXT,
@@ -65,6 +67,7 @@ CREATE TABLE IF NOT EXISTS customer_deliveries (
   customer_name     TEXT NOT NULL,
   customer_phone    TEXT,
   customer_address  TEXT,
+  province          TEXT,
   location_url      TEXT,
   appointment_date  DATE,
   machine_model     TEXT NOT NULL,
@@ -81,6 +84,11 @@ CREATE TABLE IF NOT EXISTS customer_deliveries (
 CREATE TRIGGER update_customer_deliveries_updated_at
   BEFORE UPDATE ON customer_deliveries
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Migration for existing tables if needed:
+ALTER TABLE customer_repairs ADD COLUMN IF NOT EXISTS province TEXT;
+ALTER TABLE shop_repairs ADD COLUMN IF NOT EXISTS province TEXT;
+ALTER TABLE customer_deliveries ADD COLUMN IF NOT EXISTS province TEXT;
 
 -- Enable Row Level Security (optional but recommended)
 ALTER TABLE customer_repairs ENABLE ROW LEVEL SECURITY;
