@@ -1380,3 +1380,42 @@ th.sortable:hover {
 .swal2-custom-cancel-btn:hover {
   background-color: var(--danger-hover) !important;
 }
+
+/* ======================================================== */
+/* GLOBAL MOBILE & TABLET TOUCH ENHANCEMENTS                */
+/* ======================================================== */
+@media (max-width: 1024px) {
+  /* Prevent horizontal screen scrolling */
+  html, body {
+    overflow-x: hidden;
+    width: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Touch-friendly inputs and buttons */
+  button, input, select, textarea {
+    font-size: 16px; /* Prevents auto-zoom on iOS Safari */
+  }
+
+  /* Make sure all data tables scroll smoothly on touch devices */
+  .table-container,
+  .table-responsive,
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+  }
+
+  /* Global Modals on Mobile & Tablets */
+  .modal-overlay {
+    padding: 10px;
+    box-sizing: border-box;
+  }
+
+  .modal,
+  .modal-content,
+  .card-glass {
+    max-width: 100% !important;
+    box-sizing: border-box;
+  }
+}

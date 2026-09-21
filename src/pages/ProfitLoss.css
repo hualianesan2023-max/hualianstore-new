@@ -102,3 +102,47 @@
   padding-top: 4px;
   margin-top: 4px;
 }
+
+/* ============================================================
+   Responsive Media Queries for Profit & Loss Page
+   ============================================================ */
+@media (max-width: 1024px) {
+  .profit-loss-page {
+    padding: 18px 14px;
+  }
+}
+
+@media (max-width: 768px) {
+  .profit-loss-page {
+    padding: 14px 10px;
+  }
+
+  .date-filters {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+
+  .date-filters button {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}

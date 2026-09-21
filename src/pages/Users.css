@@ -81,3 +81,28 @@
     opacity: 1;
   }
 }
+
+/* ============================================================
+   Responsive Media Queries for Users Page
+   ============================================================ */
+@media (max-width: 768px) {
+  .users-page {
+    padding: 14px 10px;
+  }
+
+  .users-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .users-header .btn-primary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

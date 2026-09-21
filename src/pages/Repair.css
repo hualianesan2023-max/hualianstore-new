@@ -1104,3 +1104,416 @@
   }
   .repair-receipt-actions { display: none !important; }
 }
+
+/* ============================================================
+   Mobile & Tablet Responsive Styles for Repair & Delivery
+   ============================================================ */
+
+/* Desktop Table Wrapper */
+.repair-desktop-table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile Cards Wrap (Hidden by default on Desktop & Tablet Landscape) */
+.repair-mobile-cards-wrap {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Mobile Card Element */
+.repair-mobile-card {
+  background: #13141c;
+  border: 1px solid #282a36;
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  transition: border-color 0.2s;
+}
+
+.repair-mobile-card:hover {
+  border-color: #3f4255;
+}
+
+/* Card Header */
+.rmc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 8px;
+}
+
+.rmc-id-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rmc-id {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: #a5b4fc;
+}
+
+.rmc-date {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.rmc-status-block {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Highlights: Province & Appointment Date */
+.rmc-highlights-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.rmc-date-item .repair-date-badge-large {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.rmc-province-item .repair-province-badge-large {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+/* Section */
+.rmc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rmc-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* Customer Section */
+.rmc-cust-section {
+  background: rgba(99, 102, 241, 0.03);
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(99, 102, 241, 0.08);
+}
+
+.rmc-cust-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rmc-cust-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f3f4f6;
+}
+
+.rmc-cust-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  padding-left: 20px;
+}
+
+.rmc-link-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.rmc-link-pill.call {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.rmc-link-pill.call:active {
+  background: rgba(16, 185, 129, 0.3);
+}
+
+.rmc-link-pill.map {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.rmc-link-pill.map:active {
+  background: rgba(56, 189, 248, 0.3);
+}
+
+/* Machine Section */
+.rmc-machine-section {
+  padding: 4px 0;
+}
+
+.rmc-machine-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rmc-machine-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.rmc-symptoms-text {
+  font-size: 12.5px;
+  color: #9ca3af;
+  padding-left: 20px;
+}
+
+/* Meta: Tech & Cost */
+.rmc-meta-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+}
+
+.rmc-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rmc-meta-label {
+  font-size: 11px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+/* Action Buttons */
+.rmc-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-top: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 10px;
+}
+
+.rmc-btn {
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.rmc-btn-edit {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+}
+
+.rmc-btn-edit:active {
+  background: rgba(99, 102, 241, 0.3);
+}
+
+.rmc-btn-delete {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.rmc-btn-delete:active {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+/* ============================================================
+   Media Queries: Mobile (< 768px)
+   ============================================================ */
+@media (max-width: 768px) {
+  .repair-page {
+    padding: 14px 10px;
+  }
+
+  .repair-page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .repair-btn-primary {
+    width: 100%;
+    justify-content: center;
+    padding: 12px;
+    font-size: 15px;
+  }
+
+  /* 3 Main Tabs: Horizontal Touch Scroll */
+  .repair-tabs {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+    padding: 4px;
+    box-sizing: border-box;
+    margin-bottom: 14px;
+  }
+
+  .repair-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .repair-tab-btn {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  /* Status Chips */
+  .repair-status-chips {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+    margin-bottom: 12px;
+  }
+
+  .repair-status-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .repair-status-chip {
+    flex: 0 0 auto;
+    padding: 5px 12px;
+    font-size: 12px;
+  }
+
+  /* Date Filter Bar */
+  .repair-date-filter-bar {
+    padding: 10px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .repair-date-filter-left {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .repair-date-chips {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+    width: 100%;
+  }
+
+  .repair-date-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .repair-date-chip {
+    flex: 0 0 auto;
+    padding: 5px 10px;
+    font-size: 11.5px;
+  }
+
+  .repair-date-filter-right {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .repair-date-picker-wrap {
+    width: 100%;
+  }
+
+  .repair-date-input {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .repair-sort-btn {
+    width: 100%;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 9px;
+  }
+
+  .repair-search-bar {
+    padding: 9px 12px;
+    margin-bottom: 14px;
+  }
+
+  /* Switch Views */
+  .repair-desktop-table-container {
+    display: none;
+  }
+
+  .repair-mobile-cards-wrap {
+    display: flex;
+  }
+
+  .repair-table-wrap {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+  }
+
+  /* Modal Form on Mobile */
+  .modal-overlay {
+    padding: 8px;
+    align-items: center;
+  }
+
+  .modal-content, .repair-modal-content {
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin: 0;
+    max-height: 90vh;
+    border-radius: 16px;
+    padding: 16px;
+  }
+}

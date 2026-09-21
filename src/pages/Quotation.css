@@ -1807,3 +1807,87 @@ textarea.form-input {
   flex-shrink: 0;
   text-align: center;
 }
+
+/* ============================================================
+   Responsive Media Queries for Quotation Page (Mobile & Tablet)
+   ============================================================ */
+@media (max-width: 1024px) {
+  .quotation-page {
+    padding: 18px 14px;
+  }
+
+  .form-grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .quotation-page {
+    padding: 14px 10px;
+  }
+
+  .quotation-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .tab-buttons {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    display: flex;
+    justify-content: stretch;
+  }
+
+  .tab-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 8px 12px;
+    font-size: 13.5px;
+  }
+
+  .toolbar-section {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .search-box {
+    max-width: 100%;
+  }
+
+  .form-grid-3,
+  .form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .items-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cust-modal-container {
+    width: 96% !important;
+    max-width: 96vw !important;
+    height: 90vh;
+    border-radius: 16px;
+  }
+
+  .cust-modal-grid-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .quotation-modal-box {
+    width: 98% !important;
+    max-width: 98vw !important;
+    height: 94vh;
+    padding: 10px 6px;
+  }
+
+  .quotation-paper-viewport {
+    padding: 4px;
+  }
+}

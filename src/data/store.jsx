@@ -54,6 +54,20 @@ export const ACTIONS = {
 
 const STORAGE_KEY = 'pos_store_state';
 
+// Deduplication Helper to guarantee distinct records in local state
+function deduplicateById(array) {
+  if (!Array.isArray(array)) return [];
+  const seen = new Set();
+  return array.filter((item) => {
+    if (!item) return false;
+    const id = item.id || item.code || item.name;
+    if (!id) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
 // ======================================
 // Load initial state (Blank Skeleton State + Persisted Session)
 // ======================================
@@ -65,9 +79,9 @@ function loadInitialState() {
     if (saved) {
       const parsed = JSON.parse(saved);
       currentUser = parsed.currentUser || null;
-      if (Array.isArray(parsed.customerRepairs)) savedRepairs.customerRepairs = parsed.customerRepairs;
-      if (Array.isArray(parsed.shopRepairs)) savedRepairs.shopRepairs = parsed.shopRepairs;
-      if (Array.isArray(parsed.customerDeliveries)) savedRepairs.customerDeliveries = parsed.customerDeliveries;
+      if (Array.isArray(parsed.customerRepairs)) savedRepairs.customerRepairs = deduplicateById(parsed.customerRepairs);
+      if (Array.isArray(parsed.shopRepairs)) savedRepairs.shopRepairs = deduplicateById(parsed.shopRepairs);
+      if (Array.isArray(parsed.customerDeliveries)) savedRepairs.customerDeliveries = deduplicateById(parsed.customerDeliveries);
     }
   } catch (err) {
     console.warn('ไม่สามารถโหลดข้อมูลเซสชันผู้ใช้ได้:', err);
@@ -102,10 +116,20 @@ function loadInitialState() {
 function storeReducer(state, action) {
   switch (action.type) {
     case ACTIONS.SET_PRODUCTS:
-      return { ...state, products: action.payload };
+      return { ...state, products: deduplicateById(action.payload) };
 
-    case ACTIONS.ADD_PRODUCT:
+    case ACTIONS.ADD_PRODUCT: {
+      const exists = state.products.some((p) => p.id === action.payload.id);
+      if (exists) {
+        return {
+          ...state,
+          products: state.products.map((p) =>
+            p.id === action.payload.id ? { ...p, ...action.payload } : p
+          ),
+        };
+      }
       return { ...state, products: [...state.products, action.payload] };
+    }
 
     case ACTIONS.UPDATE_PRODUCT:
       return {
@@ -122,19 +146,39 @@ function storeReducer(state, action) {
       };
 
     case ACTIONS.SET_SALES:
-      return { ...state, sales: action.payload };
+      return { ...state, sales: deduplicateById(action.payload) };
 
-    case ACTIONS.ADD_SALE:
+    case ACTIONS.ADD_SALE: {
+      const exists = state.sales.some((s) => s.id === action.payload.id);
+      if (exists) {
+        return {
+          ...state,
+          sales: state.sales.map((s) =>
+            s.id === action.payload.id ? { ...s, ...action.payload } : s
+          ),
+        };
+      }
       return { ...state, sales: [action.payload, ...state.sales] };
+    }
 
     case ACTIONS.UPDATE_STORE_INFO:
       return { ...state, storeInfo: { ...state.storeInfo, ...action.payload } };
 
     case ACTIONS.SET_PROMOTIONS:
-      return { ...state, promotions: action.payload };
+      return { ...state, promotions: deduplicateById(action.payload) };
 
-    case ACTIONS.ADD_PROMOTION:
+    case ACTIONS.ADD_PROMOTION: {
+      const exists = state.promotions.some((p) => p.id === action.payload.id || p.code === action.payload.code);
+      if (exists) {
+        return {
+          ...state,
+          promotions: state.promotions.map((p) =>
+            (p.id === action.payload.id || p.code === action.payload.code) ? { ...p, ...action.payload } : p
+          ),
+        };
+      }
       return { ...state, promotions: [...state.promotions, action.payload] };
+    }
 
     case ACTIONS.UPDATE_PROMOTION:
       return {
@@ -151,10 +195,20 @@ function storeReducer(state, action) {
       };
 
     case ACTIONS.SET_CATEGORIES:
-      return { ...state, categories: action.payload };
+      return { ...state, categories: deduplicateById(action.payload) };
 
-    case ACTIONS.ADD_CATEGORY:
+    case ACTIONS.ADD_CATEGORY: {
+      const exists = state.categories.some((c) => c.id === action.payload.id || c.name === action.payload.name);
+      if (exists) {
+        return {
+          ...state,
+          categories: state.categories.map((c) =>
+            (c.id === action.payload.id || c.name === action.payload.name) ? { ...c, ...action.payload } : c
+          ),
+        };
+      }
       return { ...state, categories: [...state.categories, action.payload] };
+    }
 
     case ACTIONS.LOGIN_USER:
       return { ...state, currentUser: action.payload };
@@ -163,7 +217,7 @@ function storeReducer(state, action) {
       return { ...state, currentUser: null };
 
     case ACTIONS.SET_CUSTOMERS:
-      return { ...state, customers: action.payload };
+      return { ...state, customers: deduplicateById(action.payload) };
 
     case ACTIONS.ADD_CUSTOMER:
       {
@@ -185,6 +239,15 @@ function storeReducer(state, action) {
           taxId: c.taxId || '-',
           type: isComp ? 'company' : 'general'
         };
+        const exists = state.customers.some((cust) => cust.id === customerWithFields.id);
+        if (exists) {
+          return {
+            ...state,
+            customers: state.customers.map((cust) =>
+              cust.id === customerWithFields.id ? { ...cust, ...customerWithFields } : cust
+            ),
+          };
+        }
         return { ...state, customers: [...state.customers, customerWithFields] };
       }
 
@@ -223,10 +286,20 @@ function storeReducer(state, action) {
       };
 
     case ACTIONS.SET_USERS:
-      return { ...state, users: action.payload };
+      return { ...state, users: deduplicateById(action.payload) };
 
-    case ACTIONS.ADD_USER:
+    case ACTIONS.ADD_USER: {
+      const exists = state.users.some((u) => u.id === action.payload.id || u.username === action.payload.username);
+      if (exists) {
+        return {
+          ...state,
+          users: state.users.map((u) =>
+            (u.id === action.payload.id || u.username === action.payload.username) ? { ...u, ...action.payload } : u
+          ),
+        };
+      }
       return { ...state, users: [...state.users, action.payload] };
+    }
 
     case ACTIONS.UPDATE_USER:
       return {
@@ -243,10 +316,20 @@ function storeReducer(state, action) {
       };
 
     case ACTIONS.SET_QUOTATIONS:
-      return { ...state, quotations: action.payload };
+      return { ...state, quotations: deduplicateById(action.payload) };
 
-    case ACTIONS.ADD_QUOTATION:
+    case ACTIONS.ADD_QUOTATION: {
+      const exists = state.quotations.some((q) => q.id === action.payload.id);
+      if (exists) {
+        return {
+          ...state,
+          quotations: state.quotations.map((q) =>
+            q.id === action.payload.id ? { ...q, ...action.payload } : q
+          ),
+        };
+      }
       return { ...state, quotations: [action.payload, ...state.quotations] };
+    }
 
     case ACTIONS.UPDATE_QUOTATION:
       return {
@@ -264,9 +347,19 @@ function storeReducer(state, action) {
 
     // ── Customer Repairs ──
     case ACTIONS.SET_CUSTOMER_REPAIRS:
-      return { ...state, customerRepairs: action.payload };
-    case ACTIONS.ADD_CUSTOMER_REPAIR:
+      return { ...state, customerRepairs: deduplicateById(action.payload) };
+    case ACTIONS.ADD_CUSTOMER_REPAIR: {
+      const exists = state.customerRepairs.some((r) => r.id === action.payload.id);
+      if (exists) {
+        return {
+          ...state,
+          customerRepairs: state.customerRepairs.map((r) =>
+            r.id === action.payload.id ? { ...r, ...action.payload } : r
+          ),
+        };
+      }
       return { ...state, customerRepairs: [action.payload, ...state.customerRepairs] };
+    }
     case ACTIONS.UPDATE_CUSTOMER_REPAIR:
       return {
         ...state,
@@ -279,9 +372,19 @@ function storeReducer(state, action) {
 
     // ── Shop Repairs ──
     case ACTIONS.SET_SHOP_REPAIRS:
-      return { ...state, shopRepairs: action.payload };
-    case ACTIONS.ADD_SHOP_REPAIR:
+      return { ...state, shopRepairs: deduplicateById(action.payload) };
+    case ACTIONS.ADD_SHOP_REPAIR: {
+      const exists = state.shopRepairs.some((r) => r.id === action.payload.id);
+      if (exists) {
+        return {
+          ...state,
+          shopRepairs: state.shopRepairs.map((r) =>
+            r.id === action.payload.id ? { ...r, ...action.payload } : r
+          ),
+        };
+      }
       return { ...state, shopRepairs: [action.payload, ...state.shopRepairs] };
+    }
     case ACTIONS.UPDATE_SHOP_REPAIR:
       return {
         ...state,
@@ -294,9 +397,19 @@ function storeReducer(state, action) {
 
     // ── Customer Deliveries (ส่งเครื่องลูกค้า) ──
     case ACTIONS.SET_CUSTOMER_DELIVERIES:
-      return { ...state, customerDeliveries: action.payload };
-    case ACTIONS.ADD_CUSTOMER_DELIVERY:
+      return { ...state, customerDeliveries: deduplicateById(action.payload) };
+    case ACTIONS.ADD_CUSTOMER_DELIVERY: {
+      const exists = state.customerDeliveries.some((r) => r.id === action.payload.id);
+      if (exists) {
+        return {
+          ...state,
+          customerDeliveries: state.customerDeliveries.map((r) =>
+            r.id === action.payload.id ? { ...r, ...action.payload } : r
+          ),
+        };
+      }
       return { ...state, customerDeliveries: [action.payload, ...state.customerDeliveries] };
+    }
     case ACTIONS.UPDATE_CUSTOMER_DELIVERY:
       return {
         ...state,

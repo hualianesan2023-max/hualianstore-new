@@ -66,18 +66,29 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
 
   return (
     <>
-      {/* Mobile Hamburger Button */}
-      <button
-        className="sidebar-mobile-toggle"
-        onClick={() => setMobileOpen(!mobileOpen)}
-        aria-label={mobileOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
-      >
-        <span className={`hamburger-icon ${mobileOpen ? 'open' : ''}`}>
-          <span />
-          <span />
-          <span />
-        </span>
-      </button>
+      {/* Mobile Topbar Header (Standardized for Mobile & Tablets) */}
+      <header className="mobile-topbar">
+        <button
+          className="mobile-topbar-toggle"
+          onClick={() => setMobileOpen(!mobileOpen)}
+          aria-label={mobileOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
+        >
+          <span className={`hamburger-icon ${mobileOpen ? 'open' : ''}`}>
+            <span />
+            <span />
+            <span />
+          </span>
+        </button>
+
+        <div className="mobile-topbar-brand">
+          <img src={logoImg} className="mobile-topbar-logo" alt="HUALIAN Logo" />
+          <span className="mobile-topbar-title">HUALIAN STORE</span>
+        </div>
+
+        <div className="mobile-topbar-user" onClick={() => setMobileOpen(true)} title="เปิดเมนูผู้ใช้">
+          <span className="mobile-user-avatar">{currentUser.avatar || '👤'}</span>
+        </div>
+      </header>
 
       {/* Mobile Overlay */}
       <div

@@ -508,89 +508,221 @@ const RepairTable = ({
 
   return (
     <div className="repair-table-wrap">
-      <table className="repair-table">
-        <thead>
-          <tr>
-            <th>รหัสงาน</th>
-            <th>ลูกค้า</th>
-            <th className="repair-th-province">📍 จังหวัดที่จะไป</th>
-            <th>{isDelivery ? 'เครื่อง / รายการส่ง' : 'เครื่อง / อาการ'}</th>
-            {(isCustomer || isDelivery) && (
-              <th
-                className="repair-th-date sortable"
-                onClick={onToggleDateSort}
-                title="คลิกเพื่อเรียงลำดับตามวันนัดหมาย"
-              >
-                <div className="repair-th-sortable-inner">
-                  <span>📅 {isDelivery ? 'วันนัดส่ง' : 'วันนัด'}</span>
-                  <span className="repair-sort-icon">
-                    {sortBy === 'appointmentDate' ? (sortOrder === 'asc' ? ' 🔼' : ' 🔽') : ' ⇅'}
-                  </span>
-                </div>
-              </th>
-            )}
-            <th>{isDelivery ? 'ช่างผู้ส่ง' : 'ช่าง'}</th>
-            <th>{isDelivery ? 'ค่าส่ง/บริการ' : 'ค่าซ่อม'}</th>
-            <th>สถานะ</th>
-            <th>จัดการ</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map(r => {
-            const province = detectProvince(r);
-            return (
-              <tr key={r.id}>
-                <td className="repair-id-cell">
-                  <span className="repair-id">{r.id}</span>
-                  <span className="repair-date-sub">{r.date}</span>
-                </td>
-                <td>
-                  <div className="repair-customer-cell">
-                    <span className="repair-cust-name">{r.customerName}</span>
-                    {r.customerPhone && <span className="repair-cust-phone">📞 {r.customerPhone}</span>}
-                    {(isCustomer || isDelivery) && r.locationUrl && (
-                      <a href={r.locationUrl} target="_blank" rel="noreferrer" className="repair-location-link">
-                        📍 โลเคชั่น
-                      </a>
-                    )}
+      {/* Desktop Table View (screens >= 768px) */}
+      <div className="repair-desktop-table-container">
+        <table className="repair-table">
+          <thead>
+            <tr>
+              <th>รหัสงาน</th>
+              <th>ลูกค้า</th>
+              <th className="repair-th-province">📍 จังหวัดที่จะไป</th>
+              <th>{isDelivery ? 'เครื่อง / รายการส่ง' : 'เครื่อง / อาการ'}</th>
+              {(isCustomer || isDelivery) && (
+                <th
+                  className="repair-th-date sortable"
+                  onClick={onToggleDateSort}
+                  title="คลิกเพื่อเรียงลำดับตามวันนัดหมาย"
+                >
+                  <div className="repair-th-sortable-inner">
+                    <span>📅 {isDelivery ? 'วันนัดส่ง' : 'วันนัด'}</span>
+                    <span className="repair-sort-icon">
+                      {sortBy === 'appointmentDate' ? (sortOrder === 'asc' ? ' 🔼' : ' 🔽') : ' ⇅'}
+                    </span>
                   </div>
-                </td>
-                <td className="repair-province-cell">
+                </th>
+              )}
+              <th>{isDelivery ? 'ช่างผู้ส่ง' : 'ช่าง'}</th>
+              <th>{isDelivery ? 'ค่าส่ง/บริการ' : 'ค่าซ่อม'}</th>
+              <th>สถานะ</th>
+              <th>จัดการ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(r => {
+              const province = detectProvince(r);
+              return (
+                <tr key={r.id}>
+                  <td className="repair-id-cell">
+                    <span className="repair-id">{r.id}</span>
+                    <span className="repair-date-sub">{r.date}</span>
+                  </td>
+                  <td>
+                    <div className="repair-customer-cell">
+                      <span className="repair-cust-name">{r.customerName}</span>
+                      {r.customerPhone && <span className="repair-cust-phone">📞 {r.customerPhone}</span>}
+                      {(isCustomer || isDelivery) && r.locationUrl && (
+                        <a href={r.locationUrl} target="_blank" rel="noreferrer" className="repair-location-link">
+                          📍 โลเคชั่น
+                        </a>
+                      )}
+                    </div>
+                  </td>
+                  <td className="repair-province-cell">
+                    {province ? (
+                      <div className="repair-province-badge-large" title={`จังหวัด: ${province}`}>
+                        <span className="repair-province-pin">📍</span>
+                        <span className="repair-province-name">จ.{province}</span>
+                      </div>
+                    ) : (
+                      <span className="repair-province-none">
+                        {activeTab === 'shop' ? '🏪 ซ่อมหน้าร้าน' : '— ไม่ระบุ —'}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    <div className="repair-machine-cell">
+                      <span className="repair-machine-name">{r.machineModel}</span>
+                      {r.symptoms && <span className="repair-symptoms-sub">{r.symptoms}</span>}
+                    </div>
+                  </td>
+                  {(isCustomer || isDelivery) && (
+                    <td className="repair-date-cell">
+                      {r.appointmentDate ? (
+                        <div className="repair-date-badge-large" title={`วันนัด: ${r.appointmentDate}`}>
+                          <span className="repair-date-pin">📅</span>
+                          <span className="repair-date-text">{r.appointmentDate}</span>
+                        </div>
+                      ) : (
+                        <span className="repair-date-none">
+                          ⏳ รอนัดวัน
+                        </span>
+                      )}
+                    </td>
+                  )}
+                  <td>
+                    <span className="repair-tech-badge">{r.technician || '-'}</span>
+                  </td>
+                  <td>
+                    <div className="repair-cost-cell">
+                      {Number(r.actualCost) > 0
+                        ? <span className="repair-cost-actual">฿{Number(r.actualCost).toLocaleString()}</span>
+                        : Number(r.estimatedCost) > 0
+                          ? <span className="repair-cost-est">~฿{Number(r.estimatedCost).toLocaleString()}</span>
+                          : <span className="repair-cost-none">-</span>
+                      }
+                    </div>
+                  </td>
+                  <td>
+                    <div className="repair-status-wrap">
+                      <StatusBadge status={r.status} />
+                      <select
+                        className="repair-status-mini-select"
+                        value={r.status}
+                        onChange={(e) => onStatusChange(r.id, e.target.value)}
+                        title="เปลี่ยนสถานะ"
+                      >
+                        {STATUSES.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
+                      </select>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="repair-action-btns">
+                      <button className="repair-action-btn edit" onClick={() => onEdit(r)} title="แก้ไข">✏️</button>
+                      <button className="repair-action-btn delete" onClick={() => onDelete(r.id)} title="ลบ">🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile Card View (optimized for smartphones & small tablets < 768px) */}
+      <div className="repair-mobile-cards-wrap">
+        {items.map(r => {
+          const province = detectProvince(r);
+          return (
+            <div className="repair-mobile-card" key={`card-${r.id}`}>
+              {/* Header: ID + Date + Status */}
+              <div className="rmc-header">
+                <div className="rmc-id-block">
+                  <span className="rmc-id">{r.id}</span>
+                  <span className="rmc-date">📅 {r.date}</span>
+                </div>
+                <div className="rmc-status-block">
+                  <StatusBadge status={r.status} />
+                  <select
+                    className="repair-status-mini-select"
+                    value={r.status}
+                    onChange={(e) => onStatusChange(r.id, e.target.value)}
+                    title="เปลี่ยนสถานะ"
+                  >
+                    {STATUSES.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Province & Appointment Date Highlight Bar */}
+              <div className="rmc-highlights-row">
+                <div className="rmc-province-item">
                   {province ? (
-                    <div className="repair-province-badge-large" title={`จังหวัด: ${province}`}>
+                    <div className="repair-province-badge-large">
                       <span className="repair-province-pin">📍</span>
                       <span className="repair-province-name">จ.{province}</span>
                     </div>
                   ) : (
                     <span className="repair-province-none">
-                      {activeTab === 'shop' ? '🏪 ซ่อมหน้าร้าน' : '— ไม่ระบุ —'}
+                      {activeTab === 'shop' ? '🏪 ซ่อมหน้าร้าน' : '— ไม่ระบุจังหวัด —'}
                     </span>
                   )}
-                </td>
-                <td>
-                  <div className="repair-machine-cell">
-                    <span className="repair-machine-name">{r.machineModel}</span>
-                    {r.symptoms && <span className="repair-symptoms-sub">{r.symptoms}</span>}
-                  </div>
-                </td>
+                </div>
+
                 {(isCustomer || isDelivery) && (
-                  <td className="repair-date-cell">
+                  <div className="rmc-date-item">
                     {r.appointmentDate ? (
                       <div className="repair-date-badge-large" title={`วันนัด: ${r.appointmentDate}`}>
                         <span className="repair-date-pin">📅</span>
                         <span className="repair-date-text">{r.appointmentDate}</span>
                       </div>
                     ) : (
-                      <span className="repair-date-none">
-                        ⏳ รอนัดวัน
-                      </span>
+                      <span className="repair-date-none">⏳ รอนัดวัน</span>
                     )}
-                  </td>
+                  </div>
                 )}
-                <td>
+              </div>
+
+              {/* Customer Details */}
+              <div className="rmc-section rmc-cust-section">
+                <div className="rmc-cust-name-wrap">
+                  <span className="rmc-icon">👤</span>
+                  <span className="rmc-cust-name">{r.customerName}</span>
+                </div>
+                <div className="rmc-cust-links">
+                  {r.customerPhone && (
+                    <a href={`tel:${r.customerPhone}`} className="rmc-link-pill call" title="แตะเพื่อโทรออก">
+                      📞 {r.customerPhone}
+                    </a>
+                  )}
+                  {(isCustomer || isDelivery) && r.locationUrl && (
+                    <a href={r.locationUrl} target="_blank" rel="noreferrer" className="rmc-link-pill map" title="แตะเพื่อเปิดแผนที่">
+                      📍 โลเคชั่น
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Machine & Symptom Details */}
+              <div className="rmc-section rmc-machine-section">
+                <div className="rmc-machine-title">
+                  <span className="rmc-icon">⚙️</span>
+                  <span className="rmc-machine-name">{r.machineModel}</span>
+                </div>
+                {r.symptoms && (
+                  <div className="rmc-symptoms-text">
+                    {isDelivery ? `📦 รายการ: ${r.symptoms}` : `🔧 อาการ: ${r.symptoms}`}
+                  </div>
+                )}
+              </div>
+
+              {/* Technician & Cost */}
+              <div className="rmc-section rmc-meta-section">
+                <div className="rmc-meta-item">
+                  <span className="rmc-meta-label">{isDelivery ? 'ช่างผู้ส่ง' : 'ช่างซ่อม'}</span>
                   <span className="repair-tech-badge">{r.technician || '-'}</span>
-                </td>
-                <td>
+                </div>
+                <div className="rmc-meta-item">
+                  <span className="rmc-meta-label">{isDelivery ? 'ค่าส่ง/บริการ' : 'ค่าซ่อม'}</span>
                   <div className="repair-cost-cell">
                     {Number(r.actualCost) > 0
                       ? <span className="repair-cost-actual">฿{Number(r.actualCost).toLocaleString()}</span>
@@ -599,31 +731,22 @@ const RepairTable = ({
                         : <span className="repair-cost-none">-</span>
                     }
                   </div>
-                </td>
-                <td>
-                  <div className="repair-status-wrap">
-                    <StatusBadge status={r.status} />
-                    <select
-                      className="repair-status-mini-select"
-                      value={r.status}
-                      onChange={(e) => onStatusChange(r.id, e.target.value)}
-                      title="เปลี่ยนสถานะ"
-                    >
-                      {STATUSES.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
-                    </select>
-                  </div>
-                </td>
-                <td>
-                  <div className="repair-action-btns">
-                    <button className="repair-action-btn edit" onClick={() => onEdit(r)} title="แก้ไข">✏️</button>
-                    <button className="repair-action-btn delete" onClick={() => onDelete(r.id)} title="ลบ">🗑️</button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="rmc-actions">
+                <button className="rmc-btn rmc-btn-edit" onClick={() => onEdit(r)}>
+                  ✏️ แก้ไข
+                </button>
+                <button className="rmc-btn rmc-btn-delete" onClick={() => onDelete(r.id)}>
+                  🗑️ ลบ
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };
@@ -649,9 +772,19 @@ const Repair = () => {
   const [receiptRecord, setReceiptRecord] = useState(null); // ← ใบรับซ่อม
 
   const currentList = useMemo(() => {
-    if (activeTab === 'customer') return customerRepairs;
-    if (activeTab === 'shop') return shopRepairs;
-    return customerDeliveries;
+    let list = [];
+    if (activeTab === 'customer') list = customerRepairs;
+    else if (activeTab === 'shop') list = shopRepairs;
+    else list = customerDeliveries;
+
+    // Extra layer of defense: Deduplicate by ID
+    const seen = new Set();
+    return list.filter((r) => {
+      if (!r || !r.id) return false;
+      if (seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
+    });
   }, [activeTab, customerRepairs, shopRepairs, customerDeliveries]);
 
   const actionPrefix = useMemo(() => {
