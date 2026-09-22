@@ -784,3 +784,30 @@
     font-size: 13px;
   }
 }
+
+/* Float Toast Alert for Products */
+.products-toast {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  background: var(--accent-primary, #10b981);
+  color: white;
+  padding: 12px 24px;
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(16, 185, 129, 0.35);
+  z-index: 99999;
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

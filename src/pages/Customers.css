@@ -67,6 +67,203 @@
 }
 
 /* ============================================================
+   Excel Import Feature Styling
+   ============================================================ */
+.btn-import-excel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  color: var(--text-primary);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn-import-excel:hover {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.excel-template-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: var(--radius-md);
+}
+
+.excel-template-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.excel-template-icon {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.btn-download-template {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-primary);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-download-template:hover {
+  background: var(--accent-primary);
+  color: white;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+.excel-dropzone {
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 26px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: var(--bg-secondary);
+}
+
+.excel-dropzone:hover {
+  border-color: var(--accent-primary);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.excel-dropzone.drag-active {
+  border-color: var(--accent-primary);
+  background: rgba(16, 185, 129, 0.12);
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.25);
+}
+
+.excel-dropzone.has-file {
+  border-color: rgba(16, 185, 129, 0.7);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.excel-dropzone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.excel-dropzone-icon {
+  font-size: 38px;
+  line-height: 1;
+}
+
+.excel-dropzone-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+.excel-dropzone-text strong {
+  color: var(--text-primary);
+  font-size: 14.5px;
+}
+
+.browse-link {
+  color: var(--accent-primary);
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.excel-filename {
+  color: var(--accent-primary) !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+}
+
+.excel-preview-section {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.excel-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.excel-preview-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+
+.excel-preview-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--radius-sm);
+  background: rgba(16, 185, 129, 0.18);
+  color: var(--accent-primary);
+}
+
+.excel-preview-table-wrap {
+  max-height: 230px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.excel-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.excel-preview-table th {
+  background: var(--bg-secondary);
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: left;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.excel-preview-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+}
+
+.excel-preview-more {
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+}
+
+/* ============================================================
    Responsive Media Queries for Customers Page
    ============================================================ */
 @media (max-width: 768px) {
@@ -80,9 +277,31 @@
     gap: 12px;
   }
 
-  .customers-header .btn-primary {
+  .customers-header .flex.gap-sm {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .customers-header .btn {
     width: 100%;
     justify-content: center;
+  }
+
+  .excel-template-banner {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: left;
+    gap: 12px;
+  }
+
+  .btn-download-template {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .excel-dropzone {
+    padding: 20px 14px;
   }
 
   .table-container {

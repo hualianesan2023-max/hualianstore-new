@@ -123,6 +123,14 @@ const Products = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [toastMessage, setToastMessage] = useState('');
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage('');
+    }, 3000);
+  };
 
   const [formData, setFormData] = useState({
     name: '',
@@ -310,12 +318,14 @@ const Products = () => {
         type: 'UPDATE_PRODUCT',
         payload: { ...payload, id: editingProduct.id },
       });
+      showToast('💾 อัปเดตข้อมูลสินค้าเรียบร้อยแล้ว');
     } else {
       const generatedId = formData.barcode ? formData.barcode.trim().toUpperCase() : ('P-' + Date.now());
       dispatch({
         type: 'ADD_PRODUCT',
         payload: { ...payload, id: generatedId },
       });
+      showToast('📦 เพิ่มสินค้าใหม่เรียบร้อยแล้ว');
     }
     closeModal();
   };
@@ -350,6 +360,7 @@ const Products = () => {
     );
     if (confirmed) {
       dispatch({ type: 'DELETE_PRODUCT', payload: id });
+      showToast('🗑️ ลบสินค้าเรียบร้อยแล้ว');
     }
   };
 
@@ -412,6 +423,9 @@ const Products = () => {
   // ═══════════════════════════════════════════════════════════════════
   return (
     <div className="products-page">
+      {/* Toast Alert */}
+      {toastMessage && <div className="products-toast">{toastMessage}</div>}
+
       {/* ─── Header ─────────────────────────────────────────────── */}
       <div className="products-header">
         <h1>
