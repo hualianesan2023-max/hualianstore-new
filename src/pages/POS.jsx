@@ -1,8 +1,16 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useStore } from '../data/store';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useStore, ACTIONS } from '../data/store';
 import Receipt from '../components/Receipt';
 import './POS.css';
 import { showAlert, showConfirm } from '../utils/alerts';
+import Swal from 'sweetalert2';
+
+const formatCurrency = (amount) => {
+  return Number(amount || 0).toLocaleString('th-TH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
 
 // ===== Generate unique sale ID =====
 const generateSaleId = (existingSales = []) => {
@@ -95,11 +103,181 @@ const POS = () => {
   const [globalPriceType, setGlobalPriceType] = useState('sell');
 
   // === Quotation-to-Order ===
-  // === Quotation-to-Order ===
   const savedQuotations = state?.quotations || [];
   const [quotationSearchQuery, setQuotationSearchQuery] = useState('');
   const [showQuotationModal, setShowQuotationModal] = useState(false);
   const [loadedQuotationId, setLoadedQuotationId] = useState(null);
+
+  // === Receipt Management (Edit / Delete with PIN 45500) ===
+  const [showReceiptManagerModal, setShowReceiptManagerModal] = useState(false);
+  const [receiptSearchQuery, setReceiptSearchQuery] = useState('');
+  const [editingSale, setEditingSale] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [viewingReceiptSale, setViewingReceiptSale] = useState(null);
+
+  const handleOpenReceiptManager = async () => {
+    const { value: pin } = await Swal.fire({
+      title: '🔐 รหัสความปลอดภัย',
+      text: 'กรุณาใส่รหัสผ่านเพื่อเข้าใช้งาน แก้ไข/ลบใบเสร็จ',
+      input: 'password',
+      inputPlaceholder: '*****',
+      inputAttributes: {
+        maxlength: '10',
+        autocapitalize: 'off',
+        autocorrect: 'off',
+        autocomplete: 'new-password',
+        style: 'text-align: center; letter-spacing: 8px; font-size: 22px;'
+      },
+      showCancelButton: true,
+      confirmButtonText: 'ยืนยัน',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#4f46e5',
+      cancelButtonColor: '#4b5563',
+      background: '#1a1b26',
+      color: '#f3f4f6',
+      didOpen: () => {
+        const input = Swal.getInput();
+        if (input) {
+          input.focus();
+        }
+      }
+    });
+
+    if (pin === '45500') {
+      setShowReceiptManagerModal(true);
+    } else if (pin !== undefined) {
+      Swal.fire({
+        icon: 'error',
+        title: 'รหัสผ่านไม่ถูกต้อง',
+        text: 'รหัสผ่านไม่ถูกต้อง ไม่สามารถเข้าถึงการแก้ไขหรือลบใบเสร็จได้',
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'ตกลง',
+        background: '#1a1b26',
+        color: '#f3f4f6'
+      });
+    }
+  };
+
+  const allSales = state?.sales || [];
+  const filteredSalesForManager = useMemo(() => {
+    const q = receiptSearchQuery.trim().toLowerCase();
+    if (!q) return allSales;
+    return allSales.filter(s => {
+      const idMatch = s.id && s.id.toLowerCase().includes(q);
+      const custName = (s.customer?.name || '').toLowerCase().includes(q);
+      const custPhone = (s.customer?.phone || '').toLowerCase().includes(q);
+      const emp = (s.employee || '').toLowerCase().includes(q);
+      return idMatch || custName || custPhone || emp;
+    });
+  }, [allSales, receiptSearchQuery]);
+
+  const handleDeleteSale = async (sale) => {
+    const totalQty = (sale.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const itemsSummary = (sale.items || []).map(it => 
+      `• <b>${it.name}</b> (จำนวน ${it.quantity} ชิ้น คืนเข้า: ${it.selectedLocation || 'คลังใหญ่'})`
+    ).join('<br/>');
+
+    const result = await Swal.fire({
+      title: `⚠️ ยืนยันการลบใบเสร็จ ${sale.id}?`,
+      html: `
+        <div style="text-align: left; font-size: 14px; line-height: 1.6; color: #cbd5e1;">
+          <p>ลูกค้า: <b>${sale.customer?.name || 'ลูกค้าทั่วไป'}</b></p>
+          <p>ยอดเงิน: <b style="color: #10b981;">฿${Number(sale.total || 0).toLocaleString()}</b></p>
+          <hr style="border: 0; border-top: 1px solid #334155; margin: 10px 0;"/>
+          <p style="font-weight: bold; color: #f59e0b;">📦 รายการสินค้าที่จะคืนเข้าสต๊อก (${totalQty} ชิ้น):</p>
+          <div style="background: #0f172a; padding: 10px; border-radius: 8px; margin: 8px 0; font-size: 13px;">
+            ${itemsSummary || 'ไม่มีรายการสินค้า'}
+          </div>
+          <p style="color: #ef4444; font-size: 12.5px; margin-top: 8px;">
+            * เมื่อยืนยัน ระบบจะลบใบเสร็จนี้และคืนจำนวนสินค้ากลับเข้าสต๊อกให้โดยอัตโนมัติ
+          </p>
+        </div>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: '🗑️ ยืนยันลบและคืนสต๊อก',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#4b5563',
+      background: '#1a1b26',
+      color: '#f3f4f6'
+    });
+
+    if (result.isConfirmed) {
+      dispatch({
+        type: ACTIONS.DELETE_SALE,
+        payload: sale
+      });
+      Swal.fire({
+        icon: 'success',
+        title: 'ลบใบเสร็จสำเร็จ!',
+        text: `ลบใบเสร็จ ${sale.id} และคืนสต๊อกสินค้าเรียบร้อยแล้ว`,
+        confirmButtonColor: '#10b981',
+        confirmButtonText: 'ตกลง',
+        background: '#1a1b26',
+        color: '#f3f4f6'
+      });
+    }
+  };
+
+  const handleStartEditSale = (sale) => {
+    setEditForm({
+      id: sale.id,
+      date: sale.date,
+      customerName: sale.customer?.name || 'ลูกค้าทั่วไป',
+      customerPhone: sale.customer?.phone === '-' ? '' : (sale.customer?.phone || ''),
+      customerAddress: sale.customer?.address === '-' ? '' : (sale.customer?.address || ''),
+      customerTaxId: sale.customer?.taxId === '-' ? '' : (sale.customer?.taxId || ''),
+      employee: sale.employee || 'หน้าร้าน',
+      paymentMethod: sale.paymentMethod || 'cash',
+      shippingCost: sale.shippingCost || 0,
+      discountAmount: sale.discountAmount || 0,
+      subtotal: sale.subtotal || 0,
+      tax: sale.tax || 0,
+      total: sale.total || 0,
+      items: sale.items || []
+    });
+    setEditingSale(sale);
+  };
+
+  const handleSaveEditSale = (e) => {
+    e.preventDefault();
+    if (!editForm || !editingSale) return;
+
+    // As requested: "ถ้าแก้ไขจำนวนสต๊อกเท่าเดิมไม่ต้องทำอะไร"
+    const updatedSale = {
+      ...editingSale,
+      customer: {
+        ...editingSale.customer,
+        name: editForm.customerName.trim() || 'ลูกค้าทั่วไป',
+        phone: editForm.customerPhone.trim() || '-',
+        address: editForm.customerAddress.trim() || '-',
+        taxId: editForm.customerTaxId.trim() || '-'
+      },
+      employee: editForm.employee,
+      paymentMethod: editForm.paymentMethod,
+      shippingCost: Number(editForm.shippingCost || 0),
+      discountAmount: Number(editForm.discountAmount || 0),
+    };
+
+    dispatch({
+      type: ACTIONS.UPDATE_SALE,
+      payload: updatedSale
+    });
+
+    setEditingSale(null);
+    setEditForm(null);
+
+    Swal.fire({
+      icon: 'success',
+      title: 'บันทึกการแก้ไขแล้ว',
+      text: `อัปเดตข้อมูลใบเสร็จ ${updatedSale.id} สำเร็จ (สต๊อกสินค้าคงเดิม)`,
+      confirmButtonColor: '#10b981',
+      confirmButtonText: 'ตกลง',
+      background: '#1a1b26',
+      color: '#f3f4f6'
+    });
+  };
 
   const handleDirectQuotationSearch = () => {
     const rawQuery = quotationSearchQuery.trim();
@@ -544,13 +722,29 @@ const POS = () => {
       return;
     }
 
+    if (!promo.active) {
+      setDiscountMessage({ text: '⚠️ โค้ดส่วนลดนี้ถูกปิดใช้งานชั่วคราว', type: 'error' });
+      setAppliedDiscount(null);
+      return;
+    }
+
+    const currentSubtotal = cart.reduce((sum, item) => sum + item.sellPrice * item.quantity, 0);
+    if (promo.minPurchase > 0 && currentSubtotal < promo.minPurchase) {
+      setDiscountMessage({ 
+        text: `⚠️ ยอดสั่งซื้อขั้นต่ำ ฿${promo.minPurchase.toLocaleString()} (ปัจจุบัน ฿${currentSubtotal.toLocaleString()})`, 
+        type: 'error' 
+      });
+      setAppliedDiscount(null);
+      return;
+    }
+
     setAppliedDiscount({ code, ...promo });
     setDiscountMessage({
       text: `✅ ใช้โค้ดสำเร็จ: ${promo.description}`,
       type: 'success',
     });
     showToast(`🎉 ใช้โค้ด ${code} สำเร็จ — ${promo.description}`, 'success');
-  }, [discountCode, promoCodes, showToast]);
+  }, [discountCode, promoCodes, cart, showToast]);
 
   // === Calculate totals ===
   const isVatInclusive = customerType === 'general';
@@ -731,6 +925,7 @@ const POS = () => {
             >
               <option value="หน้าร้าน">🏪 หน้าร้าน</option>
               <option value="สาขา">🏢 สาขา</option>
+              <option value="ออฟฟิศ">🏢 ออฟฟิศ</option>
               <option value="Shopee">🛍️ Shopee</option>
               <option value="Tiktok">🎵 Tiktok</option>
               <option value="เพจ">📱 เพจ</option>
@@ -740,6 +935,7 @@ const POS = () => {
               <option value="โชคชัย(เอ็ก)">👨 โชคชัย</option>
               <option value="เกียรติชัย (พี่เกียรติ)">👨 เกียรติชัย</option>
               <option value="พรหมโชติ(แซมมี่)">👩 พรหมโชติ</option>
+              <option value="เพอเฟ็ค">👤 เพอเฟ็ค</option>
             </select>
           </div>
 
@@ -750,7 +946,7 @@ const POS = () => {
               <input
                 type="text"
                 className="pos-quotation-search-field"
-                placeholder="ใบเสนอราคา"
+                placeholder="ค้นหาใบเสนอราคา..."
                 value={quotationSearchQuery}
                 onChange={(e) => setQuotationSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -779,6 +975,16 @@ const POS = () => {
               🔍 ค้นหา
             </button>
           </div>
+
+          {/* Manage Receipts Button (Edit / Delete with PIN) */}
+          <button
+            type="button"
+            className="pos-receipt-manage-btn"
+            onClick={handleOpenReceiptManager}
+            title="แก้ไขใบเสร็จ / ลบใบเสร็จ"
+          >
+            🧾 แก้ไขใบเสร็จ/ลบใบเสร็จ
+          </button>
         </div>
 
         {/* ====== Quotation Search Modal ====== */}
@@ -1707,6 +1913,313 @@ const POS = () => {
       {/* Receipt Modal */}
       {showReceipt && (
         <Receipt sale={lastSale} onClose={() => setShowReceipt(false)} />
+      )}
+
+      {/* ====== Receipt Manager Modal ====== */}
+      {showReceiptManagerModal && (
+        <div className="rcm-modal-overlay">
+          <div className="rcm-modal-box" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="rcm-modal-header">
+              <div>
+                <h3 className="rcm-modal-title">
+                  <span>🧾</span> จัดการใบเสร็จรับเงิน (แก้ไข / ลบ)
+                </h3>
+                <p className="rcm-modal-subtitle">
+                  ค้นหาเพื่อแก้ไขรายละเอียดบิล หรือลบใบเสร็จ (ระบบจะคืนสต๊อกสินค้าเข้าคลังอัตโนมัติ)
+                </p>
+              </div>
+              <button className="rcm-modal-close" onClick={() => setShowReceiptManagerModal(false)}>✕</button>
+            </div>
+
+            {/* Search Filter */}
+            <div className="rcm-search-wrap">
+              <span className="rcm-search-icon">🔍</span>
+              <input
+                type="text"
+                className="rcm-search-input"
+                placeholder="ค้นหาเลขที่บิล (IV...), ชื่อลูกค้า, เบอร์โทร, หรือผู้ขาย..."
+                value={receiptSearchQuery}
+                onChange={(e) => setReceiptSearchQuery(e.target.value)}
+                autoFocus
+              />
+              {receiptSearchQuery && (
+                <button className="rcm-clear-btn" onClick={() => setReceiptSearchQuery('')}>✕</button>
+              )}
+            </div>
+
+            {/* Table */}
+            <div className="rcm-table-wrap">
+              {filteredSalesForManager.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
+                  <span style={{ fontSize: '3rem', display: 'block', marginBottom: '12px' }}>📂</span>
+                  <p style={{ fontSize: '16px' }}>{receiptSearchQuery ? 'ไม่พบใบเสร็จที่ตรงกับคำค้นหา' : 'ยังไม่มีรายการขายในระบบ'}</p>
+                </div>
+              ) : (
+                <table className="rcm-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '140px' }}>เลขที่บิล</th>
+                      <th style={{ width: '150px' }}>วันที่ - เวลา</th>
+                      <th>ลูกค้า / บริษัท</th>
+                      <th style={{ width: '130px' }}>ผู้ขาย</th>
+                      <th style={{ width: '130px', textAlign: 'right' }}>ยอดสุทธิ</th>
+                      <th style={{ width: '120px', textAlign: 'center' }}>วิธีชำระเงิน</th>
+                      <th style={{ width: '180px' }}>รายการสินค้า</th>
+                      <th style={{ width: '220px', textAlign: 'center' }}>การกระทำ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSalesForManager.map((s) => {
+                      const dateStr = s.date
+                        ? new Date(s.date).toLocaleDateString('th-TH', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '-';
+                      const itemsCount = (s.items || []).reduce((acc, it) => acc + Number(it.quantity || 0), 0);
+                      const paymentLabel = s.paymentMethod === 'cash' ? '💵 เงินสด' : s.paymentMethod === 'qr' ? '📱 QR Code' : '💳 โอนเงิน';
+
+                      return (
+                        <tr key={s.id}>
+                          <td>
+                            <span className="rcm-invoice-badge">{s.id}</span>
+                          </td>
+                          <td style={{ color: '#94a3b8', fontSize: '13px' }}>{dateStr}</td>
+                          <td>
+                            <div style={{ fontWeight: '600' }}>{s.customer?.name || 'ลูกค้าทั่วไป'}</div>
+                            {s.customer?.phone && s.customer.phone !== '-' && (
+                              <div style={{ fontSize: '12px', color: '#94a3b8' }}>📞 {s.customer.phone}</div>
+                            )}
+                          </td>
+                          <td>
+                            <span style={{ fontSize: '12.5px', color: '#cbd5e1' }}>{s.employee || 'หน้าร้าน'}</span>
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>
+                            ฿{formatCurrency(s.total)}
+                          </td>
+                          <td style={{ textAlign: 'center', fontSize: '12.5px', color: '#94a3b8' }}>
+                            {paymentLabel}
+                          </td>
+                          <td style={{ fontSize: '12px', color: '#94a3b8', maxWidth: '200px' }}>
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={(s.items || []).map(it => `${it.name} x${it.quantity}`).join(', ')}>
+                              {s.items?.length || 0} รายการ ({itemsCount} ชิ้น)
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                              <button
+                                type="button"
+                                className="rcm-btn-view"
+                                onClick={() => setViewingReceiptSale(s)}
+                                title="ดู/พิมพ์ใบเสร็จ"
+                              >
+                                👁️ ดูบิล
+                              </button>
+                              <button
+                                type="button"
+                                className="rcm-btn-edit"
+                                onClick={() => handleStartEditSale(s)}
+                                title="แก้ไขใบเสร็จ (สต๊อกไม่เปลี่ยน)"
+                              >
+                                ✏️ แก้ไข
+                              </button>
+                              <button
+                                type="button"
+                                className="rcm-btn-delete"
+                                onClick={() => handleDeleteSale(s)}
+                                title="ลบใบเสร็จและคืนสต๊อกสินค้า"
+                              >
+                                🗑️ ลบ
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====== Edit Sale Submodal ====== */}
+      {editingSale && editForm && (
+        <div className="rcm-edit-overlay" onClick={() => setEditingSale(null)}>
+          <div className="rcm-edit-box" onClick={(e) => e.stopPropagation()}>
+            <div className="rcm-modal-header">
+              <div>
+                <h3 className="rcm-modal-title">✏️ แก้ไขข้อมูลใบเสร็จ {editForm.id}</h3>
+                <p className="rcm-modal-subtitle">* การแก้ไขนี้จะไม่มีผลต่อสต๊อกสินค้า (สต๊อกสินค้าคงเดิม)</p>
+              </div>
+              <button className="rcm-modal-close" onClick={() => setEditingSale(null)}>✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEditSale} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+              <div className="rcm-edit-body">
+                <div className="rcm-form-row">
+                  <div className="rcm-form-group">
+                    <label>เลขที่บิล</label>
+                    <input type="text" value={editForm.id} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                  </div>
+                  <div className="rcm-form-group">
+                    <label>ผู้ขาย</label>
+                    <select
+                      value={editForm.employee}
+                      onChange={(e) => setEditForm({ ...editForm, employee: e.target.value })}
+                    >
+                      <option value="หน้าร้าน">🏪 หน้าร้าน</option>
+                      <option value="สาขา">🏢 สาขา</option>
+                      <option value="ออฟฟิศ">🏢 ออฟฟิศ</option>
+                      <option value="Shopee">🛍️ Shopee</option>
+                      <option value="Tiktok">🎵 Tiktok</option>
+                      <option value="เพจ">📱 เพจ</option>
+                      <option value="สายฝน(ฝน)">👩 สายฝน</option>
+                      <option value="สุบิน(ต๋อง)">👨 สุบิน</option>
+                      <option value="ชฎาพร(แก้ม)">👩 ชฎาพร</option>
+                      <option value="โชคชัย(เอ็ก)">👨 โชคชัย</option>
+                      <option value="เกียรติชัย (พี่เกียรติ)">👨 เกียรติชัย</option>
+                      <option value="พรหมโชติ(แซมมี่)">👩 พรหมโชติ</option>
+                      <option value="เพอเฟ็ค">👤 เพอเฟ็ค</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="rcm-form-row">
+                  <div className="rcm-form-group">
+                    <label>ชื่อลูกค้า / บริษัท</label>
+                    <input
+                      type="text"
+                      value={editForm.customerName}
+                      onChange={(e) => setEditForm({ ...editForm, customerName: e.target.value })}
+                      placeholder="ลูกค้าทั่วไป หรือ ชื่อลูกค้า..."
+                    />
+                  </div>
+                  <div className="rcm-form-group">
+                    <label>เบอร์โทรศัพท์</label>
+                    <input
+                      type="text"
+                      value={editForm.customerPhone}
+                      onChange={(e) => setEditForm({ ...editForm, customerPhone: e.target.value })}
+                      placeholder="เบอร์โทรลูกค้า..."
+                    />
+                  </div>
+                </div>
+
+                <div className="rcm-form-group">
+                  <label>ที่อยู่ลูกค้า</label>
+                  <textarea
+                    rows="2"
+                    value={editForm.customerAddress}
+                    onChange={(e) => setEditForm({ ...editForm, customerAddress: e.target.value })}
+                    placeholder="ที่อยู่ลูกค้า..."
+                  />
+                </div>
+
+                <div className="rcm-form-row">
+                  <div className="rcm-form-group">
+                    <label>เลขประจำตัวผู้เสียภาษี (Tax ID)</label>
+                    <input
+                      type="text"
+                      value={editForm.customerTaxId}
+                      onChange={(e) => setEditForm({ ...editForm, customerTaxId: e.target.value })}
+                      placeholder="13 หลัก (ถ้ามี)..."
+                    />
+                  </div>
+                  <div className="rcm-form-group">
+                    <label>วิธีชำระเงิน</label>
+                    <select
+                      value={editForm.paymentMethod}
+                      onChange={(e) => setEditForm({ ...editForm, paymentMethod: e.target.value })}
+                    >
+                      <option value="cash">💵 เงินสด</option>
+                      <option value="transfer">💳 เงินโอน</option>
+                      <option value="qr">📱 สแกน QR Code</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="rcm-form-row">
+                  <div className="rcm-form-group">
+                    <label>ค่าจัดส่ง (บาท)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editForm.shippingCost}
+                      onChange={(e) => setEditForm({ ...editForm, shippingCost: Number(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className="rcm-form-group">
+                    <label>ส่วนลด (บาท)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editForm.discountAmount}
+                      onChange={(e) => setEditForm({ ...editForm, discountAmount: Number(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ background: '#0d101e', padding: '12px 16px', borderRadius: '10px', fontSize: '13px', color: '#94a3b8' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span>ยอดรวมสินค้าเดิม:</span>
+                    <span>฿{formatCurrency(editForm.subtotal)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span>ภาษี VAT:</span>
+                    <span>฿{formatCurrency(editForm.tax)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#10b981', fontSize: '14px' }}>
+                    <span>ยอดสุทธิเดิม:</span>
+                    <span>฿{formatCurrency(editForm.total)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rcm-edit-footer">
+                <button
+                  type="button"
+                  style={{
+                    padding: '10px 18px',
+                    background: '#1e2235',
+                    border: '1px solid #2d334d',
+                    borderRadius: '10px',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    fontWeight: '600'
+                  }}
+                  onClick={() => setEditingSale(null)}
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    padding: '10px 22px',
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    fontWeight: '600'
+                  }}
+                >
+                  💾 บันทึกการแก้ไข
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Viewing / Reprinting Selected Receipt (rendered on top) */}
+      {viewingReceiptSale && (
+        <Receipt sale={viewingReceiptSale} onClose={() => setViewingReceiptSale(null)} />
       )}
 
       {/* Toast */}

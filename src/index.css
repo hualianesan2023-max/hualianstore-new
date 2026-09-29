@@ -78,6 +78,10 @@
   --sidebar-collapsed-width: 72px;
 }
 
+/* SweetAlert2 top-most z-index overlay */
+.swal2-container {
+  z-index: 999999 !important;
+}
 
 /* ─── Reset ─────────────────────────────────── */
 *,

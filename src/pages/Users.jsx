@@ -16,6 +16,14 @@ const Users = () => {
   const [showModal, setShowModal] = useState(false);
   const [currentUserEdit, setCurrentUserEdit] = useState(null); // null for add, object for edit
   const [toastMessage, setToastMessage] = useState('');
+  const [showPasswords, setShowPasswords] = useState({});
+
+  const toggleShowPassword = (id) => {
+    setShowPasswords((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
 
   // Form State
   const [form, setForm] = useState({
@@ -256,7 +264,26 @@ const Users = () => {
                       </td>
                       <td>{u.name}</td>
                       <td style={{ fontFamily: 'monospace', color: '#94a3b8' }}>
-                        {u.password}
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                          <span>{showPasswords[u.id] ? u.password : '••••••••'}</span>
+                          <button
+                            type="button"
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '2px 4px',
+                              fontSize: '13px',
+                              opacity: 0.75,
+                              lineHeight: 1,
+                              borderRadius: '4px'
+                            }}
+                            title={showPasswords[u.id] ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+                            onClick={() => toggleShowPassword(u.id)}
+                          >
+                            {showPasswords[u.id] ? '🙈' : '👁️'}
+                          </button>
+                        </div>
                       </td>
                       <td>
                         <span className={`badge-role ${roleInfo.className}`}>

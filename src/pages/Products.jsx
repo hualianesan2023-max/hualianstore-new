@@ -3,6 +3,7 @@ import { useStore } from '../data/store';
 import { categories as categoryList } from '../data/mockData';
 import './Products.css';
 import { showAlert, showConfirm } from '../utils/alerts';
+import ReceiveStockModal from '../components/ReceiveStockModal';
 
 // ─── Product Types (Brands) ───────────────────────────────────────────
 const DEFAULT_PRODUCT_TYPES = [
@@ -120,6 +121,7 @@ const Products = () => {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [stockFilter, setStockFilter] = useState('all');
   const [showModal, setShowModal] = useState(false);
+  const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -433,16 +435,27 @@ const Products = () => {
           จัดการสินค้า
           <span className="product-count">({state.products.length} รายการ)</span>
         </h1>
-        <button 
-          className="btn-add-product" 
-          onClick={openAddModal}
-          disabled={isUserRole}
-          style={isUserRole ? { opacity: 0.5, cursor: 'not-allowed', background: '#334155' } : {}}
-          title={isUserRole ? "เฉพาะผู้ดูแลระบบเท่านั้น" : "เพิ่มสินค้าใหม่"}
-        >
-          <span>{isUserRole ? '🔒' : '➕'}</span>
-          เพิ่มสินค้าใหม่ {isUserRole && '(จำกัดสิทธิ์)'}
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button 
+            type="button"
+            className="btn-receive-product" 
+            onClick={() => setIsReceiveModalOpen(true)}
+            title="แบบฟอร์มรับเครื่องจักรเข้าระบบ / เติมสต๊อกสินค้า"
+          >
+            <span>📥</span>
+            รับเครื่องเข้าระบบ
+          </button>
+          <button 
+            className="btn-add-product" 
+            onClick={openAddModal}
+            disabled={isUserRole}
+            style={isUserRole ? { opacity: 0.5, cursor: 'not-allowed', background: '#334155' } : {}}
+            title={isUserRole ? "เฉพาะผู้ดูแลระบบเท่านั้น" : "เพิ่มสินค้าใหม่"}
+          >
+            <span>{isUserRole ? '🔒' : '➕'}</span>
+            เพิ่มสินค้าใหม่ {isUserRole && '(จำกัดสิทธิ์)'}
+          </button>
+        </div>
       </div>
 
 
@@ -1086,6 +1099,15 @@ const Products = () => {
           </div>
         </div>
       )}
+
+      {/* Receive Stock Modal */}
+      <ReceiveStockModal
+        isOpen={isReceiveModalOpen}
+        onClose={() => setIsReceiveModalOpen(false)}
+        onStockReceived={(voucher) => {
+          showToast(`📥 รับเครื่องเข้าระบบสำเร็จ (${voucher.totalUnits} เครื่อง)`);
+        }}
+      />
     </div>
   );
 };

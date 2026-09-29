@@ -3,15 +3,16 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Overlay ────────────────────────────────────────────────────── */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  z-index: 9999;
+.modal-overlay.receipt-modal-overlay,
+.receipt-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.78) !important;
+  backdrop-filter: blur(8px) !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  z-index: 99999 !important;
   animation: receiptFadeIn 0.25s ease;
   padding: 30px 10px;
   overflow-y: auto;

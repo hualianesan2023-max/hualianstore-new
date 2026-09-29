@@ -41,7 +41,8 @@
 /* ===== Top Row Layout ===== */
 .pos-top-row {
   display: flex;
-  gap: 16px;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 16px;
   width: 100%;
 }
@@ -49,18 +50,19 @@
 /* ===== Search Bar ===== */
 .pos-search {
   position: relative;
-  flex: 3 1 0;
-  min-width: 0;
+  flex: 1.2 1 260px;
+  min-width: 180px;
 }
 
 .pos-search input {
   width: 100%;
-  padding: 14px 20px 14px 48px;
+  height: 48px;
+  padding: 0 20px 0 46px;
   background: #1a1b26;
   border: 2px solid #2e303a;
   border-radius: 14px;
   color: #f3f4f6;
-  font-size: 15px;
+  font-size: 14.5px;
   outline: none;
   transition: border-color 0.25s, box-shadow 0.25s;
   box-sizing: border-box;
@@ -137,11 +139,12 @@
 /* ===== Compact Salesperson (reduced width) ===== */
 .pos-salesperson-compact {
   flex: 0 0 auto;
-  min-width: 0;
+  min-width: 155px;
 }
 
 .pos-salesperson-compact select {
-  padding: 14px 32px 14px 42px;
+  height: 48px;
+  padding: 0 34px 0 42px;
   font-size: 13.5px;
 }
 
@@ -150,8 +153,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 2 1 0;
-  min-width: 0;
+  flex: 1 1 280px;
+  min-width: 220px;
 }
 
 .pos-quotation-field-wrap {
@@ -172,7 +175,8 @@
 
 .pos-quotation-search-field {
   width: 100%;
-  padding: 14px 40px 14px 44px;
+  height: 48px;
+  padding: 0 36px 0 44px;
   background: #10121d;
   border: 2px solid #282b40;
   border-radius: 14px;
@@ -186,7 +190,7 @@
 /* Make the placeholder look faint/dim/blurry just like a placeholder */
 .pos-quotation-search-field::placeholder {
   color: #5a657d;
-  opacity: 0.6;
+  opacity: 0.7;
   font-weight: 500;
 }
 
@@ -219,13 +223,15 @@
 }
 
 .pos-quotation-search-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 11px 18px;
+  height: 48px;
+  padding: 0 18px;
   background: linear-gradient(135deg, #6366f1, #818cf8);
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   color: #fff;
   font-size: 13.5px;
   font-weight: 600;
@@ -234,12 +240,371 @@
   transition: all 0.2s;
   box-shadow: 0 3px 10px rgba(99,102,241,0.35);
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .pos-quotation-search-btn:hover {
   background: linear-gradient(135deg, #4f46e5, #6366f1);
   transform: translateY(-1px);
   box-shadow: 0 5px 16px rgba(99,102,241,0.45);
+}
+
+/* ===== Receipt Manage Button (Edit / Delete) ===== */
+.pos-receipt-manage-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 20px;
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+  border: 1.5px solid #6366f1;
+  border-radius: 14px;
+  color: #e0e7ff;
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 10px rgba(79, 70, 229, 0.25);
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.pos-receipt-manage-btn:hover {
+  background: linear-gradient(135deg, #312e81 0%, #4338ca 100%);
+  border-color: #818cf8;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+}
+
+.pos-receipt-manage-btn:active {
+  transform: translateY(0);
+}
+
+.receipt-modal-overlay {
+  z-index: 99999 !important;
+}
+
+.swal2-container {
+  z-index: 999999 !important;
+}
+
+/* ===== Receipt Manager Modal ===== */
+.rcm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3100;
+  background: rgba(8, 9, 18, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.18s ease;
+}
+
+.rcm-modal-box {
+  background: #111320;
+  border: 1px solid #22263d;
+  border-radius: 20px;
+  width: 98vw;
+  max-width: none;
+  height: 94vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.8);
+  animation: slideUp 0.22s ease;
+}
+
+.rcm-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #1e2235;
+  background: #141628;
+  flex-shrink: 0;
+}
+
+.rcm-modal-title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rcm-modal-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.rcm-modal-close {
+  background: #1e2235;
+  border: none;
+  color: #94a3b8;
+  font-size: 18px;
+  cursor: pointer;
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.rcm-modal-close:hover {
+  background: #2d3148;
+  color: #f1f5f9;
+}
+
+.rcm-search-wrap {
+  position: relative;
+  padding: 16px 24px;
+  border-bottom: 1px solid #1e2235;
+  background: #121424;
+  flex-shrink: 0;
+}
+
+.rcm-search-input {
+  width: 100%;
+  padding: 12px 44px 12px 44px;
+  background: #1a1d30;
+  border: 2px solid #282c47;
+  border-radius: 12px;
+  color: #f1f5f9;
+  font-size: 14.5px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.rcm-search-input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+}
+
+.rcm-search-icon {
+  position: absolute;
+  left: 38px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 16px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.rcm-clear-btn {
+  position: absolute;
+  right: 36px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #2d3148;
+  border: none;
+  color: #94a3b8;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.rcm-table-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px 20px 24px;
+}
+
+.rcm-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.rcm-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.rcm-table th {
+  background: #141728;
+  color: #cbd5e1;
+  font-weight: 700;
+  font-size: 13.5px;
+  padding: 16px 14px;
+  border-bottom: 2px solid #282d47;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.rcm-table td {
+  padding: 14px 14px;
+  border-bottom: 1px solid #1c2035;
+  color: #e2e8f0;
+  vertical-align: middle;
+}
+
+.rcm-table tbody tr:hover {
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.rcm-invoice-badge {
+  display: inline-block;
+  font-family: monospace;
+  font-weight: 700;
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.12);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  font-size: 13px;
+}
+
+.rcm-btn-view {
+  padding: 6px 12px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.rcm-btn-view:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.rcm-btn-edit {
+  padding: 6px 12px;
+  background: #451a03;
+  border: 1px solid #b45309;
+  border-radius: 8px;
+  color: #fde68a;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.rcm-btn-edit:hover {
+  background: #78350f;
+  color: #ffffff;
+}
+
+.rcm-btn-delete {
+  padding: 6px 12px;
+  background: #450a0a;
+  border: 1px solid #dc2626;
+  border-radius: 8px;
+  color: #fca5a5;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.rcm-btn-delete:hover {
+  background: #991b1b;
+  color: #ffffff;
+}
+
+/* Edit Sale Sub-Modal */
+.rcm-edit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3200;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.rcm-edit-box {
+  background: #141729;
+  border: 1px solid #2e3352;
+  border-radius: 18px;
+  width: 100%;
+  max-width: 650px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+}
+
+.rcm-edit-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rcm-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.rcm-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rcm-form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.rcm-form-group input,
+.rcm-form-group select,
+.rcm-form-group textarea {
+  width: 100%;
+  padding: 10px 14px;
+  background: #1a1e35;
+  border: 1.5px solid #282d4d;
+  border-radius: 10px;
+  color: #f8fafc;
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.rcm-form-group input:focus,
+.rcm-form-group select:focus,
+.rcm-form-group textarea:focus {
+  border-color: #6366f1;
+}
+
+.rcm-edit-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  background: #0f1220;
+  border-top: 1px solid #1e2235;
 }
 
 /* ===== Quotation Search Modal ===== */

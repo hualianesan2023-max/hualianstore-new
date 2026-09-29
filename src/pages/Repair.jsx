@@ -62,16 +62,51 @@ export const detectProvince = (record) => {
   return '';
 };
 
+// Helper: ป้องกัน URL Injection และ XSS ในลิงก์โลเคชั่น
+export const getSafeUrl = (url) => {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(trimmed)) return `https://${trimmed}`;
+  return null;
+};
+
 // ── Status Config ─────────────────────────────────────────
-const STATUSES = [
-  { value: 'รอนัดวัน',     label: 'รอนัดวัน',     color: '#f59e0b', bg: 'rgba(245,158,11,0.15)',  icon: '🕐' },
-  { value: 'รอซ่อม',       label: 'รอซ่อม/รอส่ง', color: '#6366f1', bg: 'rgba(99,102,241,0.15)', icon: '🔧' },
-  { value: 'รออะไหล่เข้า', label: 'รออะไหล่เข้า', color: '#f97316', bg: 'rgba(249,115,22,0.15)', icon: '📦' },
-  { value: 'เสร็จแล้ว',    label: 'เสร็จแล้ว/ส่งแล้ว', color: '#10b981', bg: 'rgba(16,185,129,0.15)', icon: '✅' },
-  { value: 'ยกเลิก',       label: 'ยกเลิก',       color: '#6b7280', bg: 'rgba(107,114,128,0.15)', icon: '❌' },
+// สถานะสำหรับ เครื่องซ่อมหน้าร้าน (shop): ลูกค้ามาส่งซ่อมที่ร้าน -> ซ่อมเสร็จรอลูกค้ามารับ -> ลูกค้ามารับเครื่องแล้ว
+const SHOP_STATUSES = [
+  { value: 'รอนัดวัน',       label: 'รอนัดวัน',               color: '#f59e0b', bg: 'rgba(245,158,11,0.15)',  icon: '🕐' },
+  { value: 'รอซ่อม',         label: 'รอซ่อม/รอส่ง',           color: '#6366f1', bg: 'rgba(99,102,241,0.15)', icon: '🔧' },
+  { value: 'รออะไหล่เข้า',   label: 'รออะไหล่เข้า',           color: '#f97316', bg: 'rgba(249,115,22,0.15)', icon: '📦' },
+  { value: 'เสร็จแล้ว',      label: 'เสร็จแล้ว/รอลูกค้ามารับ', color: '#10b981', bg: 'rgba(16,185,129,0.15)', icon: '✅' },
+  { value: 'ลูกค้ามารับแล้ว', label: 'ลูกค้ามารับแล้ว',       color: '#06b6d4', bg: 'rgba(6,182,212,0.15)',  icon: '🤝' },
+  { value: 'ยกเลิก',         label: 'ยกเลิก',                 color: '#6b7280', bg: 'rgba(107,114,128,0.15)', icon: '❌' },
 ];
 
-const getStatus = (val) => STATUSES.find(s => s.value === val) || STATUSES[0];
+// สถานะสำหรับ นัดซ่อมลูกค้า (customer) และ ส่งเครื่องลูกค้า (delivery): ช่างออกไปทำงานนอกสถานที่
+const FIELD_STATUSES = [
+  { value: 'รอนัดวัน',       label: 'รอนัดวัน',               color: '#f59e0b', bg: 'rgba(245,158,11,0.15)',  icon: '🕐' },
+  { value: 'รอซ่อม',         label: 'รอซ่อม/รอส่ง',           color: '#6366f1', bg: 'rgba(99,102,241,0.15)', icon: '🔧' },
+  { value: 'รออะไหล่เข้า',   label: 'รออะไหล่เข้า',           color: '#f97316', bg: 'rgba(249,115,22,0.15)', icon: '📦' },
+  { value: 'เสร็จแล้ว',      label: 'เสร็จแล้ว/ส่งแล้ว',       color: '#10b981', bg: 'rgba(16,185,129,0.15)', icon: '✅' },
+  { value: 'ยกเลิก',         label: 'ยกเลิก',                 color: '#6b7280', bg: 'rgba(107,114,128,0.15)', icon: '❌' },
+];
+
+const STATUSES = SHOP_STATUSES;
+
+const getStatusesForTab = (tab) => (tab === 'shop' ? SHOP_STATUSES : FIELD_STATUSES);
+
+const getStatus = (val, tab = 'shop') => {
+  const list = getStatusesForTab(tab);
+  if (val === 'เสร็จแล้ว' || val === 'เสร็จแล้ว/ส่งแล้ว' || val === 'เสร็จแล้ว/รอลูกค้ามารับ') {
+    return list.find(s => s.value === 'เสร็จแล้ว') || SHOP_STATUSES.find(s => s.value === 'เสร็จแล้ว');
+  }
+  return (
+    list.find(s => s.value === val || s.label === val) ||
+    SHOP_STATUSES.find(s => s.value === val || s.label === val) ||
+    FIELD_STATUSES.find(s => s.value === val || s.label === val) ||
+    list[0]
+  );
+};
 
 // ── Running ID Generator ──────────────────────────────────
 function generateRepairId(existingList, prefix) {
@@ -116,7 +151,122 @@ const formatNow = () => {
   return `${day}/${month}/${year} ${h}:${m}`;
 };
 
-// ── Repair Job Receipt (ใบรับซ่อม) ───────────────────────────
+// ── Single Repair Receipt Half (ส่วนของร้าน หรือ ส่วนของลูกค้า) ──
+const RepairReceiptHalf = ({ record, store, statusObj, province, partNumber, partTitle, noteText, printTime }) => (
+  <div className={`rr-half ${partNumber === 1 ? 'rr-half-shop' : 'rr-half-customer'}`}>
+    <div className="rr-half-top">
+      {/* Header */}
+      <div className="rr-header">
+        <div className="rr-logo-wrap">
+          <img src={logoImg} alt="Logo" className="rr-logo" />
+        </div>
+        <div className="rr-company">
+          <div className="rr-company-name">{store?.name || 'ห้างหุ้นส่วนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.'}</div>
+          <div className="rr-company-addr">{store?.address || 'สำนักงานใหญ่ : 841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000'}</div>
+          <div className="rr-company-contact">
+            โทร: {store?.phone || '044-002716 , 084-1844310 (บัญชี) แฟ็ก. 044-248869'} | เลขผู้เสียภาษี: {store?.taxId || '0303547004494'}
+          </div>
+        </div>
+      </div>
+
+      {/* Title Bar */}
+      <div className="rr-title-bar">
+        <span className="rr-title-main">ใบรับซ่อม / REPAIR RECEIPT</span>
+        <span className="rr-copy-badge">{partTitle}</span>
+      </div>
+
+      {/* Job Info */}
+      <div className="rr-info-grid">
+        <div className="rr-info-row">
+          <span className="rr-label">รหัสงาน:</span>
+          <span className="rr-value rr-job-id">{record.id}</span>
+          <span className="rr-label">วันที่รับ:</span>
+          <span className="rr-value">{formatDateThai(record.date)}</span>
+        </div>
+        <div className="rr-info-row">
+          <span className="rr-label">ชื่อลูกค้า:</span>
+          <span className="rr-value">{record.customerName} {province ? `(จ.${province})` : ''}</span>
+          <span className="rr-label">เบอร์โทร:</span>
+          <span className="rr-value">{record.customerPhone || '-'}</span>
+        </div>
+        {record.customerAddress && (
+          <div className="rr-info-row">
+            <span className="rr-label">ที่อยู่:</span>
+            <span className="rr-value" style={{ gridColumn: 'span 3' }}>{record.customerAddress}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Repair Details */}
+      <div className="rr-section">
+        <div className="rr-section-title">รายละเอียดการซ่อม</div>
+        <table className="rr-table">
+          <tbody>
+            <tr>
+              <td className="rr-td-label">รุ่นเครื่อง / รายการซ่อม</td>
+              <td className="rr-td-value">{record.machineModel}</td>
+            </tr>
+            <tr>
+              <td className="rr-td-label">อาการเสีย / ปัญหา</td>
+              <td className="rr-td-value">{record.symptoms || '-'}</td>
+            </tr>
+            <tr>
+              <td className="rr-td-label">ช่างผู้รับผิดชอบ</td>
+              <td className="rr-td-value">{record.technician || '-'}</td>
+            </tr>
+            <tr>
+              <td className="rr-td-label">สถานะ</td>
+              <td className="rr-td-value">
+                <span className="rr-status-tag" style={{ color: statusObj.color, border: `1px solid ${statusObj.color}` }}>
+                  {statusObj.icon} {statusObj.label}
+                </span>
+              </td>
+            </tr>
+            {record.notes && (
+              <tr>
+                <td className="rr-td-label">หมายเหตุ</td>
+                <td className="rr-td-value">{record.notes}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Cost Box */}
+      <div className="rr-cost-box">
+        <div className="rr-cost-row">
+          <span>ค่าซ่อมประเมิน</span>
+          <span>{Number(record.estimatedCost) > 0 ? `฿${Number(record.estimatedCost).toLocaleString('th-TH', {minimumFractionDigits:2})}` : '-'}</span>
+        </div>
+        <div className="rr-cost-row rr-cost-actual">
+          <span>ค่าซ่อมจริง</span>
+          <span>{Number(record.actualCost) > 0 ? `฿${Number(record.actualCost).toLocaleString('th-TH', {minimumFractionDigits:2})}` : 'รอประเมิน'}</span>
+        </div>
+      </div>
+    </div>
+
+    <div className="rr-half-bottom">
+      {/* Signatures */}
+      <div className="rr-signatures">
+        <div className="rr-sig-col">
+          <div className="rr-sig-line"></div>
+          <div className="rr-sig-label">ผู้รับซ่อม</div>
+        </div>
+        <div className="rr-sig-col">
+          <div className="rr-sig-line"></div>
+          <div className="rr-sig-label">ลูกค้า / ผู้ฝากซ่อม</div>
+        </div>
+      </div>
+
+      <div className="rr-footer">
+        <div>{noteText}</div>
+        <div className="rr-timestamp">พิมพ์เมื่อ: {printTime}</div>
+      </div>
+    </div>
+  </div>
+);
+
+// ── Repair Job Receipt (ใบรับซ่อม 1 หน้า A4: 2 ส่วน ร้านค้า + ลูกค้า) ─────
 const RepairJobReceipt = ({ record, store, onClose }) => {
   const receiptRef = useRef(null);
 
@@ -128,16 +278,20 @@ const RepairJobReceipt = ({ record, store, onClose }) => {
 
   const statusObj = getStatus(record.status);
   const province = detectProvince(record);
+  const printTime = formatNow();
 
   return (
     <div className="modal-overlay">
       <div className="repair-receipt-modal">
         {/* Action Bar */}
         <div className="repair-receipt-actions">
-          <span className="repair-receipt-actions-title">🖨️ ใบรับซ่อม</span>
+          <div className="repair-receipt-actions-left">
+            <span className="repair-receipt-actions-title">🖨️ ใบรับซ่อม (ขนาด 1 หน้า A4: 2 ส่วน ร้านค้า + ลูกค้า)</span>
+            <span className="repair-receipt-actions-hint">พิมพ์ออก 1 หน้ากระดาษ A4 แบ่งเป็น 2 ส่วนเหมือนกัน พร้อมรอยปรุตัดตรงกลาง</span>
+          </div>
           <div style={{ display:'flex', gap: 8 }}>
             <button className="repair-btn repair-btn-save" onClick={handlePrint}>
-              🖨️ พิมพ์
+              🖨️ พิมพ์ (1 หน้า A4)
             </button>
             <button className="repair-btn repair-btn-cancel" onClick={onClose}>
               ✕ ปิด
@@ -148,107 +302,38 @@ const RepairJobReceipt = ({ record, store, onClose }) => {
         {/* Paper Canvas */}
         <div className="repair-receipt-paper-wrap">
           <div className="repair-receipt-paper" ref={receiptRef} id="repair-receipt-printable">
-            {/* Header */}
-            <div className="rr-header">
-              <div className="rr-logo-wrap">
-                <img src={logoImg} alt="Logo" className="rr-logo" />
-              </div>
-              <div className="rr-company">
-                <div className="rr-company-name">{store?.name || 'HUALIAN ESAN LTD.,PART.'}</div>
-                <div className="rr-company-addr">{store?.address}</div>
-                <div className="rr-company-contact">โทร: {store?.phone} | เลขผู้เสียภาษี: {store?.taxId}</div>
-              </div>
+            {/* 1 ส่วนของร้าน */}
+            <RepairReceiptHalf
+              record={record}
+              store={store}
+              statusObj={statusObj}
+              province={province}
+              partNumber={1}
+              partTitle="(ส่วนของร้าน)"
+              noteText="ส่วนของร้านค้า (สำหรับบันทึกประวัติการซ่อม)"
+              printTime={printTime}
+            />
+
+            {/* Dotted Cut Line */}
+            <div className="rr-tear-line">
+              <span className="rr-tear-line-dash"></span>
+              <span className="rr-tear-content">
+                ✂️ <span>ตัดตามรอยปรุ</span> ✂️
+              </span>
+              <span className="rr-tear-line-dash"></span>
             </div>
 
-            <div className="rr-title-bar">
-              <span>ใบรับซ่อม / REPAIR RECEIPT</span>
-            </div>
-
-            {/* Job Info */}
-            <div className="rr-info-grid">
-              <div className="rr-info-row">
-                <span className="rr-label">รหัสงาน:</span>
-                <span className="rr-value rr-job-id">{record.id}</span>
-                <span className="rr-label">วันที่รับ:</span>
-                <span className="rr-value">{formatDateThai(record.date)}</span>
-              </div>
-              <div className="rr-info-row">
-                <span className="rr-label">ชื่อลูกค้า:</span>
-                <span className="rr-value">{record.customerName} {province ? `(จ.${province})` : ''}</span>
-                <span className="rr-label">เบอร์โทร:</span>
-                <span className="rr-value">{record.customerPhone || '-'}</span>
-              </div>
-              {record.customerAddress && (
-                <div className="rr-info-row">
-                  <span className="rr-label">ที่อยู่:</span>
-                  <span className="rr-value" style={{ gridColumn: 'span 3' }}>{record.customerAddress}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Repair Details */}
-            <div className="rr-section">
-              <div className="rr-section-title">รายละเอียดการซ่อม</div>
-              <table className="rr-table">
-                <tbody>
-                  <tr>
-                    <td className="rr-td-label">รุ่นเครื่อง / รายการซ่อม</td>
-                    <td className="rr-td-value">{record.machineModel}</td>
-                  </tr>
-                  <tr>
-                    <td className="rr-td-label">อาการเสีย / ปัญหา</td>
-                    <td className="rr-td-value">{record.symptoms || '-'}</td>
-                  </tr>
-                  <tr>
-                    <td className="rr-td-label">ช่างผู้รับผิดชอบ</td>
-                    <td className="rr-td-value">{record.technician || '-'}</td>
-                  </tr>
-                  <tr>
-                    <td className="rr-td-label">สถานะ</td>
-                    <td className="rr-td-value">
-                      <span className="rr-status-tag" style={{ color: statusObj.color, border: `1px solid ${statusObj.color}` }}>
-                        {statusObj.icon} {statusObj.label}
-                      </span>
-                    </td>
-                  </tr>
-                  {record.notes && (
-                    <tr>
-                      <td className="rr-td-label">หมายเหตุ</td>
-                      <td className="rr-td-value">{record.notes}</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Cost Box */}
-            <div className="rr-cost-box">
-              <div className="rr-cost-row">
-                <span>ค่าซ่อมประเมิน</span>
-                <span>{Number(record.estimatedCost) > 0 ? `฿${Number(record.estimatedCost).toLocaleString('th-TH', {minimumFractionDigits:2})}` : '-'}</span>
-              </div>
-              <div className="rr-cost-row rr-cost-actual">
-                <span>ค่าซ่อมจริง</span>
-                <span>{Number(record.actualCost) > 0 ? `฿${Number(record.actualCost).toLocaleString('th-TH', {minimumFractionDigits:2})}` : 'รอประเมิน'}</span>
-              </div>
-            </div>
-
-            {/* Signatures */}
-            <div className="rr-signatures">
-              <div className="rr-sig-col">
-                <div className="rr-sig-line"></div>
-                <div className="rr-sig-label">ผู้รับซ่อม</div>
-              </div>
-              <div className="rr-sig-col">
-                <div className="rr-sig-line"></div>
-                <div className="rr-sig-label">ลูกค้า / ผู้ฝากซ่อม</div>
-              </div>
-            </div>
-
-            <div className="rr-footer">
-              <div>กรุณาเก็บใบรับซ่อมนี้ไว้เป็นหลักฐานในการรับเครื่องคืน</div>
-              <div className="rr-timestamp">พิมพ์เมื่อ: {formatNow()}</div>
-            </div>
+            {/* 2 ส่วนของลูกค้า */}
+            <RepairReceiptHalf
+              record={record}
+              store={store}
+              statusObj={statusObj}
+              province={province}
+              partNumber={2}
+              partTitle="(ส่วนของลูกค้า)"
+              noteText="กรุณาเก็บใบรับซ่อมนี้ไว้เป็นหลักฐานในการรับเครื่องคืน"
+              printTime={printTime}
+            />
           </div>
         </div>
       </div>
@@ -257,8 +342,8 @@ const RepairJobReceipt = ({ record, store, onClose }) => {
 };
 
 // ── Status Badge ──────────────────────────────────────────
-const StatusBadge = ({ status }) => {
-  const s = getStatus(status);
+const StatusBadge = ({ status, tab = 'shop' }) => {
+  const s = getStatus(status, tab);
   return (
     <span
       className="repair-status-badge"
@@ -460,7 +545,7 @@ const RepairFormModal = ({ mode, record, onClose, onSave, activeTab }) => {
               <div className="repair-form-group">
                 <label>สถานะ</label>
                 <select value={form.status} onChange={set('status')}>
-                  {STATUSES.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
+                  {getStatusesForTab(activeTab).map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
                 </select>
               </div>
               <div className="repair-form-group">
@@ -494,6 +579,7 @@ const RepairTable = ({
   onEdit,
   onDelete,
   onStatusChange,
+  onPrint,
   activeTab,
   sortBy,
   sortOrder,
@@ -550,8 +636,8 @@ const RepairTable = ({
                     <div className="repair-customer-cell">
                       <span className="repair-cust-name">{r.customerName}</span>
                       {r.customerPhone && <span className="repair-cust-phone">📞 {r.customerPhone}</span>}
-                      {(isCustomer || isDelivery) && r.locationUrl && (
-                        <a href={r.locationUrl} target="_blank" rel="noreferrer" className="repair-location-link">
+                      {(isCustomer || isDelivery) && getSafeUrl(r.locationUrl) && (
+                        <a href={getSafeUrl(r.locationUrl)} target="_blank" rel="noopener noreferrer" className="repair-location-link">
                           📍 โลเคชั่น
                         </a>
                       )}
@@ -604,19 +690,20 @@ const RepairTable = ({
                   </td>
                   <td>
                     <div className="repair-status-wrap">
-                      <StatusBadge status={r.status} />
+                      <StatusBadge status={r.status} tab={activeTab} />
                       <select
                         className="repair-status-mini-select"
                         value={r.status}
                         onChange={(e) => onStatusChange(r.id, e.target.value)}
                         title="เปลี่ยนสถานะ"
                       >
-                        {STATUSES.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
+                        {getStatusesForTab(activeTab).map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
                       </select>
                     </div>
                   </td>
                   <td>
                     <div className="repair-action-btns">
+                      <button className="repair-action-btn print" onClick={() => onPrint && onPrint(r)} title="ดู/พิมพ์ใบรับซ่อม (A4: 2 ส่วน)">🖨️</button>
                       <button className="repair-action-btn edit" onClick={() => onEdit(r)} title="แก้ไข">✏️</button>
                       <button className="repair-action-btn delete" onClick={() => onDelete(r.id)} title="ลบ">🗑️</button>
                     </div>
@@ -641,14 +728,14 @@ const RepairTable = ({
                   <span className="rmc-date">📅 {r.date}</span>
                 </div>
                 <div className="rmc-status-block">
-                  <StatusBadge status={r.status} />
+                  <StatusBadge status={r.status} tab={activeTab} />
                   <select
                     className="repair-status-mini-select"
                     value={r.status}
                     onChange={(e) => onStatusChange(r.id, e.target.value)}
                     title="เปลี่ยนสถานะ"
                   >
-                    {STATUSES.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
+                    {getStatusesForTab(activeTab).map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
                   </select>
                 </div>
               </div>
@@ -694,8 +781,8 @@ const RepairTable = ({
                       📞 {r.customerPhone}
                     </a>
                   )}
-                  {(isCustomer || isDelivery) && r.locationUrl && (
-                    <a href={r.locationUrl} target="_blank" rel="noreferrer" className="rmc-link-pill map" title="แตะเพื่อเปิดแผนที่">
+                  {(isCustomer || isDelivery) && getSafeUrl(r.locationUrl) && (
+                    <a href={getSafeUrl(r.locationUrl)} target="_blank" rel="noopener noreferrer" className="rmc-link-pill map" title="แตะเพื่อเปิดแผนที่">
                       📍 โลเคชั่น
                     </a>
                   )}
@@ -736,6 +823,9 @@ const RepairTable = ({
 
               {/* Action Buttons */}
               <div className="rmc-actions">
+                <button className="rmc-btn rmc-btn-print" onClick={() => onPrint && onPrint(r)} title="ดู/พิมพ์ใบรับซ่อม (A4: 2 ส่วน)">
+                  🖨️ ใบรับซ่อม
+                </button>
                 <button className="rmc-btn rmc-btn-edit" onClick={() => onEdit(r)}>
                   ✏️ แก้ไข
                 </button>
@@ -830,7 +920,13 @@ const Repair = () => {
 
     // 1. Status Filter
     if (statusFilter !== 'all') {
-      list = list.filter(r => r.status === statusFilter);
+      list = list.filter(r => {
+        if (r.status === statusFilter) return true;
+        if (statusFilter === 'เสร็จแล้ว') {
+          return r.status === 'เสร็จแล้ว' || r.status === 'เสร็จแล้ว/ส่งแล้ว' || r.status === 'เสร็จแล้ว/รอลูกค้ามารับ';
+        }
+        return false;
+      });
     }
 
     // 2. Appointment Date Filter
@@ -888,11 +984,21 @@ const Repair = () => {
     return list;
   }, [currentList, statusFilter, datePreset, customDate, searchQuery, sortBy, sortOrder]);
 
+  const currentTabStatuses = useMemo(() => getStatusesForTab(activeTab), [activeTab]);
+
   const statusCounts = useMemo(() => {
     const counts = { all: currentList.length };
-    STATUSES.forEach(s => { counts[s.value] = currentList.filter(r => r.status === s.value).length; });
+    currentTabStatuses.forEach(s => {
+      counts[s.value] = currentList.filter(r => {
+        if (r.status === s.value) return true;
+        if (s.value === 'เสร็จแล้ว') {
+          return r.status === 'เสร็จแล้ว' || r.status === 'เสร็จแล้ว/ส่งแล้ว' || r.status === 'เสร็จแล้ว/รอลูกค้ามารับ';
+        }
+        return false;
+      }).length;
+    });
     return counts;
-  }, [currentList]);
+  }, [currentList, currentTabStatuses]);
 
   const dateCounts = useMemo(() => {
     const today = getTodayStr();
@@ -1003,7 +1109,7 @@ const Repair = () => {
         >
           ทั้งหมด <span className="chip-count">{statusCounts.all}</span>
         </button>
-        {STATUSES.map(s => (
+        {currentTabStatuses.map(s => (
           <button
             key={s.value}
             className={`repair-status-chip ${statusFilter === s.value ? 'active' : ''}`}
@@ -1116,6 +1222,7 @@ const Repair = () => {
         onEdit={(r) => { setEditRecord(r); setShowModal(true); }}
         onDelete={handleDelete}
         onStatusChange={handleStatusChange}
+        onPrint={(r) => setReceiptRecord(r)}
         activeTab={activeTab}
         sortBy={sortBy}
         sortOrder={sortOrder}

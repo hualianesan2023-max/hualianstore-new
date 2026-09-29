@@ -103,6 +103,100 @@
   margin-top: 4px;
 }
 
+/* ─── Table Enhancements ─────────────────────────── */
+.profit-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 20, 29, 0.6);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.profit-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+}
+
+.profit-table th {
+  background: #161822;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 12px 14px;
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+
+.profit-table td {
+  padding: 12px 14px;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.profit-table tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+.profit-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+/* Machine / Product item display in table */
+.profit-machine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 360px;
+}
+
+.profit-machine-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.profit-machine-bullet {
+  color: #6366f1;
+  font-weight: bold;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.profit-machine-name {
+  color: #f1f5f9;
+  font-weight: 500;
+  word-break: break-word;
+  flex: 1;
+}
+
+.profit-machine-qty {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.seller-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #e2e8f0;
+  white-space: nowrap;
+}
+
 /* ============================================================
    Responsive Media Queries for Profit & Loss Page
    ============================================================ */

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useStore } from '../data/store';
+import React, { useState, useEffect } from 'react';
+import { useStore, ACTIONS } from '../data/store';
 import './Settings.css';
 import { showAlert, showConfirm } from '../utils/alerts';
 
@@ -9,12 +9,25 @@ const Settings = () => {
 
   // Store Info form state
   const [storeForm, setStoreForm] = useState({
-    name: storeInfo.name || '',
-    address: storeInfo.address || '',
-    phone: storeInfo.phone || '',
-    taxId: storeInfo.taxId || '',
-    taxRate: storeInfo.taxRate || 7,
+    name: storeInfo?.name || '',
+    address: storeInfo?.address || '',
+    phone: storeInfo?.phone || '',
+    taxId: storeInfo?.taxId || '',
+    taxRate: storeInfo?.taxRate || 7,
   });
+
+  // Sync storeForm when storeInfo is loaded or updated from Supabase
+  useEffect(() => {
+    if (storeInfo) {
+      setStoreForm({
+        name: storeInfo.name || '',
+        address: storeInfo.address || '',
+        phone: storeInfo.phone || '',
+        taxId: storeInfo.taxId || '',
+        taxRate: storeInfo.taxRate || 7,
+      });
+    }
+  }, [storeInfo]);
 
   // New promotion form state
   const [promoForm, setPromoForm] = useState({
@@ -34,10 +47,10 @@ const Settings = () => {
   };
 
   // Handle store info save
-  const handleStoreInfoSubmit = (e) => {
+  const handleStoreInfoSubmit = async (e) => {
     e.preventDefault();
     dispatch({
-      type: 'UPDATE_STORE_INFO',
+      type: ACTIONS.UPDATE_STORE_INFO,
       payload: {
         ...storeForm,
         taxRate: Number(storeForm.taxRate),
@@ -47,21 +60,31 @@ const Settings = () => {
   };
 
   // Handle add promotion
-  const handleAddPromo = (e) => {
+  const handleAddPromo = async (e) => {
     e.preventDefault();
-    if (!promoForm.code.trim() || !promoForm.name.trim() || !promoForm.value) return;
+    const cleanCode = promoForm.code.trim().toUpperCase();
+    const cleanName = promoForm.name.trim();
+    if (!cleanCode || !cleanName || !promoForm.value) return;
+
+    // Check duplicate code locally
+    if (promotions && promotions.some((p) => p.code.toUpperCase() === cleanCode)) {
+      showAlert('โค้ดนี้มีอยู่ในระบบแล้ว', `โค้ดส่วนลด "${cleanCode}" มีอยู่ในระบบแล้ว กรุณาใช้โค้ดอื่น`, 'warning');
+      return;
+    }
+
+    const newPromo = {
+      id: 'promo_' + Date.now(),
+      code: cleanCode,
+      name: cleanName,
+      type: promoForm.type,
+      value: Number(promoForm.value),
+      minPurchase: Number(promoForm.minPurchase || 0),
+      active: promoForm.active,
+    };
 
     dispatch({
-      type: 'ADD_PROMO',
-      payload: {
-        id: 'promo_' + Date.now(),
-        code: promoForm.code.trim().toUpperCase(),
-        name: promoForm.name.trim(),
-        type: promoForm.type,
-        value: Number(promoForm.value),
-        minPurchase: Number(promoForm.minPurchase || 0),
-        active: promoForm.active,
-      },
+      type: ACTIONS.ADD_PROMOTION,
+      payload: newPromo,
     });
 
     setPromoForm({
@@ -77,24 +100,32 @@ const Settings = () => {
 
   // Handle toggle promotion
   const handleTogglePromo = (promoId) => {
+    const target = promotions.find((p) => p.id === promoId);
+    if (!target) return;
+
     dispatch({
-      type: 'TOGGLE_PROMO',
-      payload: promoId,
+      type: ACTIONS.UPDATE_PROMOTION,
+      payload: {
+        ...target,
+        active: !target.active,
+      },
     });
-    showToast('🔄 อัปเดตสถานะโปรโมชั่น');
+    showToast(target.active ? '⏸️ ปิดใช้งานโปรโมชั่น' : '▶️ เปิดใช้งานโปรโมชั่น');
   };
 
   // Handle delete promotion
   const handleDeletePromo = async (promoId) => {
+    const target = promotions.find((p) => p.id === promoId);
+    const promoName = target ? ` "${target.name}"` : '';
     const confirmed = await showConfirm(
       'คุณแน่ใจที่จะลบโปรโมชั่นนี้?',
-      'ข้อมูลโปรโมชั่นจะถูกลบออกจากระบบอย่างถาวร',
+      `ข้อมูลโปรโมชั่น${promoName} จะถูกลบออกจากระบบอย่างถาวร`,
       'ใช่, ลบเลย',
       'ยกเลิก'
     );
     if (confirmed) {
       dispatch({
-        type: 'DELETE_PROMO',
+        type: ACTIONS.DELETE_PROMOTION,
         payload: promoId,
       });
       showToast('🗑️ ลบโปรโมชั่นแล้ว');

@@ -76,12 +76,25 @@ const ProfitLoss = () => {
       const customerName = sale.customer && sale.customer.name ? sale.customer.name.toLowerCase() : '';
       const customerPhone = sale.customer && sale.customer.phone ? sale.customer.phone.toLowerCase() : '';
       const employee = sale.employee ? sale.employee.toLowerCase() : '';
+
+      // Match machine / product items
+      const itemsMatch = (sale.items || []).some(item => {
+        const itemName = (item.name || '').toLowerCase();
+        const itemId = (item.productId || item.id || '').toLowerCase();
+        const catalogProduct = state.products.find(p => p.id === item.productId || p.id === item.id);
+        const catalogName = (catalogProduct?.name || '').toLowerCase();
+        const barcode = (catalogProduct?.barcode || item.barcode || '').toLowerCase();
+        const model = (catalogProduct?.model || '').toLowerCase();
+        return itemName.includes(query) || itemId.includes(query) || catalogName.includes(query) || barcode.includes(query) || model.includes(query);
+      });
+
       return billId.includes(query) || 
              customerName.includes(query) || 
              customerPhone.includes(query) || 
-             employee.includes(query);
+             employee.includes(query) ||
+             itemsMatch;
     });
-  }, [filteredSales, searchQuery]);
+  }, [filteredSales, searchQuery, state.products]);
 
   const itemsPerPage = 20;
   const totalPages = Math.ceil(searchedSales.length / itemsPerPage) || 1;
@@ -212,14 +225,20 @@ const ProfitLoss = () => {
   };
 
   const exportToExcel = () => {
-    const headers = ['เลขที่บิล', 'วันที่ - เวลา', 'ลูกค้า', 'คนขาย', 'ยอดขาย (บาท)', 'ต้นทุนสินค้า (บาท)', 'กำไรสุทธิ (บาท)', 'อัตรากำไร (%)'];
+    const headers = ['เลขที่บิล', 'วันที่ - เวลา', 'ลูกค้า', 'รายการเครื่อง / สินค้า', 'คนขาย', 'ยอดขาย (บาท)', 'ต้นทุนสินค้า (บาท)', 'กำไรสุทธิ (บาท)', 'อัตรากำไร (%)'];
     const rows = searchedSales.map(sale => {
       const profitInfo = getSaleProfitInfo(sale);
       const customerName = sale.customer ? sale.customer.name : 'ลูกค้าทั่วไป';
+      const itemsStr = (sale.items || []).map(it => {
+        const name = it.name || state.products.find(p => p.id === it.productId || p.id === it.id)?.name || it.productId || 'สินค้า';
+        return `${name} (x${it.quantity || 1})`;
+      }).join('; ');
+
       return [
         sale.id,
         formatDateTime(sale.date),
         customerName,
+        itemsStr,
         sale.employee || 'หน้าร้าน',
         sale.total,
         profitInfo.cost,
@@ -246,13 +265,21 @@ const ProfitLoss = () => {
     const printWindow = window.open('', '_blank');
     const tableRows = searchedSales.map(sale => {
       const profitInfo = getSaleProfitInfo(sale);
-      const customerName = sale.customer ? `${sale.customer.name} (📞 ${sale.customer.phone})` : 'ลูกค้าทั่วไป';
+      const customerName = sale.customer ? `${sale.customer.name} (📞 ${sale.customer.phone || '-'})` : 'ลูกค้าทั่วไป';
+      const itemsHtml = (sale.items && sale.items.length > 0)
+        ? sale.items.map(it => {
+            const name = it.name || state.products.find(p => p.id === it.productId || p.id === it.id)?.name || it.productId || 'สินค้า';
+            return `<div style="font-size: 11.5px; margin-bottom: 2px;">• ${name} <b style="color: #2563eb;">(x${it.quantity || 1})</b></div>`;
+          }).join('')
+        : '<span style="color: #999;">-</span>';
+
       return `
         <tr>
           <td style="font-weight: bold; border-bottom: 1px solid #ddd; padding: 8px;">${sale.id}</td>
-          <td style="border-bottom: 1px solid #ddd; padding: 8px;">${formatDateTime(sale.date)}</td>
+          <td style="border-bottom: 1px solid #ddd; padding: 8px; white-space: nowrap;">${formatDateTime(sale.date)}</td>
           <td style="border-bottom: 1px solid #ddd; padding: 8px;">${customerName}</td>
-          <td style="border-bottom: 1px solid #ddd; padding: 8px;">${sale.employee || 'หน้าร้าน'}</td>
+          <td style="border-bottom: 1px solid #ddd; padding: 8px;">${itemsHtml}</td>
+          <td style="border-bottom: 1px solid #ddd; padding: 8px; text-align: center;">${sale.employee || 'หน้าร้าน'}</td>
           <td style="text-align: right; border-bottom: 1px solid #ddd; padding: 8px;">฿${sale.total.toLocaleString()}</td>
           <td style="text-align: right; border-bottom: 1px solid #ddd; padding: 8px;">฿${profitInfo.cost.toLocaleString()}</td>
           <td style="text-align: right; font-weight: bold; color: ${profitInfo.profit >= 0 ? '#10b981' : '#ef4444'}; border-bottom: 1px solid #ddd; padding: 8px;">฿${profitInfo.profit.toLocaleString()}</td>
@@ -367,14 +394,15 @@ const ProfitLoss = () => {
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
             <thead>
               <tr>
-                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: left; font-size: 14px; width: 100px;">เลขที่บิล</th>
-                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: left; font-size: 14px; width: 130px;">วันที่ - เวลา</th>
-                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: left; font-size: 14px;">ลูกค้า</th>
-                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: left; font-size: 14px;">คนขาย</th>
-                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: right; font-size: 14px;">ยอดขาย</th>
-                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: right; font-size: 14px;">ต้นทุน</th>
-                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: right; font-size: 14px;">กำไรสุทธิ</th>
-                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: center; font-size: 14px; width: 90px;">อัตรากำไร</th>
+                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: left; font-size: 13px; width: 95px;">เลขที่บิล</th>
+                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: left; font-size: 13px; width: 110px;">วันที่ - เวลา</th>
+                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: left; font-size: 13px; min-width: 120px;">ลูกค้า</th>
+                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: left; font-size: 13px; min-width: 170px;">รายการเครื่อง / สินค้า</th>
+                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: center; font-size: 13px; width: 80px;">คนขาย</th>
+                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: right; font-size: 13px; width: 95px;">ยอดขาย</th>
+                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: right; font-size: 13px; width: 95px;">ต้นทุน</th>
+                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: right; font-size: 13px; width: 95px;">กำไรสุทธิ</th>
+                <th style="background: #f2f2f2; border-bottom: 2px solid #ddd; padding: 10px; text-align: center; font-size: 13px; width: 80px;">อัตรากำไร</th>
               </tr>
             </thead>
             <tbody>
@@ -518,12 +546,12 @@ const ProfitLoss = () => {
       <div className="card no-padding overflow-hidden" style={{ marginBottom: 'var(--space-xl)' }}>
         <div className="flex justify-between items-center flex-wrap" style={{ padding: 'var(--space-lg) var(--space-lg) var(--space-md)', gap: '16px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
           <h3 className="card-title" style={{ margin: 0 }}>📋 บันทึกกำไร-ขาดทุนรายธุรกรรม</h3>
-          <div className="search-group" style={{ position: 'relative', width: '300px' }}>
+          <div className="search-group" style={{ position: 'relative', width: '340px', maxWidth: '100%' }}>
             <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }}>🔍</span>
             <input
               type="text"
               className="input"
-              placeholder="ค้นหาเลขที่บิล / ลูกค้า / คนขาย..."
+              placeholder="ค้นหาเลขที่บิล / ลูกค้า / รายการเครื่อง / คนขาย..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -531,30 +559,57 @@ const ProfitLoss = () => {
               }}
               style={{ 
                 paddingLeft: '36px', 
+                paddingRight: searchQuery ? '32px' : '12px',
                 height: '38px', 
                 margin: 0, 
                 width: '100%', 
                 background: '#1a1b26', 
                 border: '1.5px solid #2e303a', 
                 color: '#fff',
-                borderRadius: '8px'
+                borderRadius: '8px',
+                fontSize: '13px'
               }}
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(1);
+                }}
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  padding: '4px'
+                }}
+                title="ล้างคำค้นหา"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
-        <div className="table-container">
-          <table>
+        <div className="table-container profit-table-wrapper">
+          <table className="profit-table">
             <thead>
               <tr>
-                <th style={{ width: '130px' }}>เลขที่บิล</th>
-                <th style={{ width: '150px' }}>วันที่ - เวลา</th>
-                <th>ข้อมูลลูกค้า</th>
-                <th>คนขาย</th>
-                <th style={{ textAlign: 'right' }}>ยอดขาย (฿)</th>
-                <th style={{ textAlign: 'right' }}>ต้นทุนสินค้า (฿)</th>
-                <th style={{ textAlign: 'right' }}>กำไรสุทธิ (฿)</th>
-                <th style={{ textAlign: 'center', width: '120px' }}>อัตรากำไร (%)</th>
-                <th style={{ textAlign: 'center', width: '100px' }}>การจัดการ</th>
+                <th style={{ width: '125px' }}>เลขที่บิล</th>
+                <th style={{ width: '125px' }}>วันที่ - เวลา</th>
+                <th style={{ minWidth: '150px' }}>ข้อมูลลูกค้า</th>
+                <th style={{ minWidth: '220px' }}>รายการเครื่อง / สินค้า</th>
+                <th style={{ width: '90px', textAlign: 'center' }}>คนขาย</th>
+                <th style={{ textAlign: 'right', width: '115px' }}>ยอดขาย (฿)</th>
+                <th style={{ textAlign: 'right', width: '115px' }}>ต้นทุนสินค้า (฿)</th>
+                <th style={{ textAlign: 'right', width: '115px' }}>กำไรสุทธิ (฿)</th>
+                <th style={{ textAlign: 'center', width: '95px' }}>อัตรากำไร</th>
+                <th style={{ textAlign: 'center', width: '95px' }}>การจัดการ</th>
               </tr>
             </thead>
             <tbody>
@@ -563,24 +618,57 @@ const ProfitLoss = () => {
                   const profitInfo = getSaleProfitInfo(sale);
                   return (
                     <tr key={sale.id}>
-                      <td className="font-bold">{sale.id}</td>
-                      <td>{formatDateTime(sale.date)}</td>
+                      <td className="font-bold" style={{ color: '#60a5fa', whiteSpace: 'nowrap' }}>
+                        {sale.id}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                        {formatDateTime(sale.date)}
+                      </td>
                       <td>
                         {sale.customer ? (
-                          <div className="flex flex-col">
-                            <span className="font-medium">{sale.customer.name}</span>
-                            <span className="text-xs text-muted">📞 {sale.customer.phone}</span>
+                          <div className="flex flex-col" style={{ gap: '2px' }}>
+                            <span className="font-medium" style={{ color: '#f8fafc', fontSize: '13px' }}>
+                              {sale.customer.name}
+                            </span>
+                            {sale.customer.phone && (
+                              <span className="text-xs text-muted" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <span>📞</span> {sale.customer.phone}
+                              </span>
+                            )}
                           </div>
                         ) : (
-                          <span className="text-secondary">👤 ลูกค้าทั่วไป</span>
+                          <span className="text-secondary" style={{ fontSize: '13px' }}>👤 ลูกค้าทั่วไป</span>
                         )}
                       </td>
                       <td>
-                        <span style={{ fontWeight: '500', color: '#e2e8f0' }}>
+                        {sale.items && sale.items.length > 0 ? (
+                          <div className="profit-machine-list">
+                            {sale.items.map((it, idx) => {
+                              const prodName = it.name || state.products.find(p => p.id === (it.productId || it.id))?.name || it.productId || 'สินค้า';
+                              const qty = it.quantity || 1;
+                              return (
+                                <div key={idx} className="profit-machine-item">
+                                  <span className="profit-machine-bullet">•</span>
+                                  <span className="profit-machine-name" title={prodName}>
+                                    {prodName}
+                                  </span>
+                                  <span className="profit-machine-qty">
+                                    x{qty}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span style={{ color: '#64748b', fontSize: '12px', fontStyle: 'italic' }}>- ไม่มีรายการ -</span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span className="seller-badge">
                           {sale.employee || 'หน้าร้าน'}
                         </span>
                       </td>
-                      <td style={{ textAlign: 'right', fontWeight: '500' }}>
+                      <td style={{ textAlign: 'right', fontWeight: '600', color: '#f8fafc' }}>
                         {sale.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                       <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
@@ -591,7 +679,7 @@ const ProfitLoss = () => {
                         {profitInfo.profit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <span className={`badge ${profitInfo.profit >= 0 ? 'badge-success' : 'badge-danger'}`}>
+                        <span className={`badge ${profitInfo.profit >= 0 ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '11px', padding: '3px 8px' }}>
                           {profitInfo.margin}%
                         </span>
                       </td>
@@ -599,8 +687,9 @@ const ProfitLoss = () => {
                         <button
                           className="btn btn-secondary btn-sm"
                           onClick={() => setSelectedSaleForReprint(sale)}
+                          title="พิมพ์บิล / ใบเสร็จรับเงิน"
                           style={{
-                            padding: '4px 8px',
+                            padding: '4px 10px',
                             fontSize: '11.5px',
                             height: 'auto',
                             display: 'inline-flex',
@@ -608,7 +697,9 @@ const ProfitLoss = () => {
                             gap: '4px',
                             background: 'rgba(59, 130, 246, 0.15)',
                             borderColor: 'rgba(59, 130, 246, 0.3)',
-                            color: '#60a5fa'
+                            color: '#60a5fa',
+                            borderRadius: '6px',
+                            whiteSpace: 'nowrap'
                           }}
                         >
                           🖨️ พิมพ์บิล
@@ -619,11 +710,13 @@ const ProfitLoss = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: 'var(--space-2xl)' }}>
+                  <td colSpan="10" style={{ textAlign: 'center', padding: 'var(--space-2xl)' }}>
                     <div className="empty-state">
                       <span className="empty-state-icon">🧾</span>
                       <p className="empty-state-title">ไม่มีบันทึกธุรกรรม</p>
-                      <p className="empty-state-text">ยังไม่มีประวัติการขายสินค้าในช่วงเวลาที่เลือก</p>
+                      <p className="empty-state-text">
+                        {searchQuery ? 'ไม่พบข้อมูลที่ตรงกับคำค้นหา' : 'ยังไม่มีประวัติการขายสินค้าในช่วงเวลาที่เลือก'}
+                      </p>
                     </div>
                   </td>
                 </tr>

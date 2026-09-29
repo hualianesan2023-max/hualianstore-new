@@ -12,11 +12,17 @@ export const ACTIONS = {
   DELETE_PRODUCT: 'DELETE_PRODUCT',
   UPDATE_STOCK: 'UPDATE_STOCK',
   ADD_SALE: 'ADD_SALE',
+  UPDATE_SALE: 'UPDATE_SALE',
+  DELETE_SALE: 'DELETE_SALE',
   SET_SALES: 'SET_SALES',
   UPDATE_STORE_INFO: 'UPDATE_STORE_INFO',
   ADD_PROMOTION: 'ADD_PROMOTION',
+  ADD_PROMO: 'ADD_PROMOTION',
   UPDATE_PROMOTION: 'UPDATE_PROMOTION',
+  TOGGLE_PROMO: 'TOGGLE_PROMOTION',
+  TOGGLE_PROMOTION: 'TOGGLE_PROMOTION',
   DELETE_PROMOTION: 'DELETE_PROMOTION',
+  DELETE_PROMO: 'DELETE_PROMOTION',
   SET_PROMOTIONS: 'SET_PROMOTIONS',
   SET_CATEGORIES: 'SET_CATEGORIES',
   ADD_CATEGORY: 'ADD_CATEGORY',
@@ -216,13 +222,60 @@ function storeReducer(state, action) {
       return { ...state, sales: newSales, products: updatedProducts };
     }
 
+    case ACTIONS.UPDATE_SALE: {
+      return {
+        ...state,
+        sales: state.sales.map((s) => (s.id === action.payload.id ? { ...s, ...action.payload } : s))
+      };
+    }
+
+    case ACTIONS.DELETE_SALE: {
+      const saleId = typeof action.payload === 'object' ? action.payload.id : action.payload;
+      const saleToDelete = state.sales.find((s) => s.id === saleId);
+      const saleItems = (typeof action.payload === 'object' && action.payload.items) 
+        ? action.payload.items 
+        : (saleToDelete?.items || []);
+
+      // Restore returned quantities to local product stock
+      const updatedProducts = state.products.map((product) => {
+        const returnedItem = saleItems.find((it) => (it.productId || it.id) === product.id);
+        if (!returnedItem) return product;
+        const qty = Number(returnedItem.quantity || 0);
+        const loc = returnedItem.selectedLocation;
+        let stockOffice = Number(product.stockOffice || 0);
+        let stockKookkai = Number(product.stockKookkai || 0);
+        let stockBig = Number(product.stockBig || 0);
+        if (loc === 'โกดังกุ๊กไก่') {
+          stockKookkai += qty;
+        } else if (loc === 'ออฟฟิศ') {
+          stockOffice += qty;
+        } else {
+          stockBig += qty;
+        }
+        return {
+          ...product,
+          stockOffice,
+          stockKookkai,
+          stockBig,
+          stock: stockOffice + stockKookkai + stockBig,
+        };
+      });
+
+      return {
+        ...state,
+        sales: state.sales.filter((s) => s.id !== saleId),
+        products: updatedProducts
+      };
+    }
+
     case ACTIONS.UPDATE_STORE_INFO:
       return { ...state, storeInfo: { ...state.storeInfo, ...action.payload } };
 
     case ACTIONS.SET_PROMOTIONS:
       return { ...state, promotions: deduplicateById(action.payload) };
 
-    case ACTIONS.ADD_PROMOTION: {
+    case ACTIONS.ADD_PROMOTION:
+    case 'ADD_PROMO': {
       const exists = state.promotions.some((p) => p.id === action.payload.id || p.code === action.payload.code);
       if (exists) {
         return {
@@ -243,11 +296,25 @@ function storeReducer(state, action) {
         ),
       };
 
-    case ACTIONS.DELETE_PROMOTION:
+    case 'TOGGLE_PROMOTION':
+    case 'TOGGLE_PROMO': {
+      const targetId = typeof action.payload === 'object' ? action.payload.id : action.payload;
       return {
         ...state,
-        promotions: state.promotions.filter((p) => p.id !== action.payload),
+        promotions: state.promotions.map((p) =>
+          p.id === targetId ? { ...p, active: typeof action.payload === 'object' && action.payload.active !== undefined ? action.payload.active : !p.active } : p
+        ),
       };
+    }
+
+    case ACTIONS.DELETE_PROMOTION:
+    case 'DELETE_PROMO': {
+      const targetId = typeof action.payload === 'object' ? action.payload.id : action.payload;
+      return {
+        ...state,
+        promotions: state.promotions.filter((p) => p.id !== targetId),
+      };
+    }
 
     case ACTIONS.SET_CATEGORIES:
       return { ...state, categories: deduplicateById(action.payload) };
@@ -1217,6 +1284,71 @@ export function StoreProvider({ children }) {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'promotions' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new;
+            dispatch({
+              type: ACTIONS.ADD_PROMOTION,
+              payload: {
+                id: row.id,
+                code: row.code,
+                name: row.name,
+                type: row.type,
+                value: Number(row.value || 0),
+                minPurchase: Number(row.min_purchase || 0),
+                active: !!row.active
+              }
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const row = payload.new;
+            dispatch({
+              type: ACTIONS.UPDATE_PROMOTION,
+              payload: {
+                id: row.id,
+                code: row.code,
+                name: row.name,
+                type: row.type,
+                value: Number(row.value || 0),
+                minPurchase: Number(row.min_purchase || 0),
+                active: !!row.active
+              }
+            });
+          } else if (payload.eventType === 'DELETE') {
+            dispatch({ type: ACTIONS.DELETE_PROMOTION, payload: payload.old.id });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'store_info' },
+        (payload) => {
+          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            const row = payload.new;
+            dispatch({
+              type: ACTIONS.UPDATE_STORE_INFO,
+              payload: {
+                name: row.name,
+                address: row.address,
+                phone: row.phone,
+                taxId: row.tax_id,
+                taxRate: Number(row.tax_rate || 7)
+              }
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sales' },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            dispatch({ type: ACTIONS.DELETE_SALE, payload: payload.old.id });
+          }
+        }
+      )
       .subscribe();
 
     return () => {
@@ -1387,6 +1519,92 @@ export function StoreProvider({ children }) {
           }
         }
       } 
+      else if (action.type === ACTIONS.UPDATE_SALE) {
+        const s = action.payload;
+        const customerName = s.customer?.name || s.customerName || 'ลูกค้าทั่วไป';
+        const customerPhone = s.customer?.phone || s.customerPhone || '-';
+        const customerAddress = s.customer?.address || s.customerAddress || '-';
+        const customerTaxId = s.customer?.taxId || s.customerTaxId || '-';
+
+        const { error } = await supabase.from('sales').update({
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          customer_address: customerAddress,
+          customer_tax_id: customerTaxId,
+          salesperson: s.employee || s.salesperson || 'หน้าร้าน',
+          payment_method: s.paymentMethod || 'cash',
+          discount_code: s.discountCode || null,
+          discount_amount: Number(s.discountAmount || 0),
+          shipping_cost: Number(s.shippingCost || 0),
+          subtotal: Number(s.subtotal),
+          tax: Number(s.tax || 0),
+          total: Number(s.total),
+          cash_received: Number(s.cashReceived || 0),
+          change: Number(s.change || 0),
+          apply_vat: s.applyVat !== undefined ? !!s.applyVat : true,
+          is_vat_inclusive: s.isVatInclusive !== undefined ? !!s.isVatInclusive : true
+        }).eq('id', s.id);
+
+        success = !error;
+        if (error) {
+          console.error('Update sale error:', error);
+          Swal.fire({
+            title: 'แก้ไขใบเสร็จไม่สำเร็จ',
+            text: error.message || JSON.stringify(error),
+            icon: 'error'
+          });
+        }
+      }
+      else if (action.type === ACTIONS.DELETE_SALE) {
+        const saleId = typeof action.payload === 'object' ? action.payload.id : action.payload;
+
+        // 1. Get items to restore stock
+        let itemsToRestore = (typeof action.payload === 'object' && action.payload.items) ? action.payload.items : [];
+        if (!itemsToRestore || itemsToRestore.length === 0) {
+          const { data: dbItems } = await supabase.from('sale_items').select('*').eq('sale_id', saleId);
+          itemsToRestore = (dbItems || []).map(it => ({
+            productId: it.product_id,
+            quantity: it.quantity,
+            selectedLocation: it.selected_location
+          }));
+        }
+
+        // 2. Restore stock in Supabase for each item
+        for (const item of itemsToRestore) {
+          const prodId = item.productId || item.id;
+          const qty = Number(item.quantity || 0);
+          const loc = item.selectedLocation || item.location;
+
+          const { data: prod, error: fetchErr } = await supabase.from('products').select('*').eq('id', prodId).single();
+          if (!fetchErr && prod) {
+            let updateFields = {};
+            if (loc === 'โกดังกุ๊กไก่') {
+              updateFields = { stock_kookkai: Number(prod.stock_kookkai || 0) + qty };
+            } else if (loc === 'ออฟฟิศ') {
+              updateFields = { stock_office: Number(prod.stock_office || 0) + qty };
+            } else {
+              updateFields = { stock_big: Number(prod.stock_big || 0) + qty };
+            }
+            const { error: stockErr } = await supabase.from('products').update(updateFields).eq('id', prodId);
+            if (stockErr) console.error('Restore stock error:', stockErr);
+          }
+        }
+
+        // 3. Delete sale_items from Supabase
+        await supabase.from('sale_items').delete().eq('sale_id', saleId);
+
+        // 4. Delete sale from Supabase
+        const { error: delErr } = await supabase.from('sales').delete().eq('id', saleId);
+        success = !delErr;
+        if (delErr) {
+          console.error('Delete sale error:', delErr);
+          Swal.fire({
+            title: 'ลบใบเสร็จไม่สำเร็จ',
+            text: delErr.message || JSON.stringify(delErr),
+            icon: 'error'
+          });
+        }
+      }
       else if (action.type === ACTIONS.ADD_CUSTOMER) {
         const c = action.payload;
         const { error } = await supabase.from('customers').insert({
@@ -1480,7 +1698,7 @@ export function StoreProvider({ children }) {
         success = !error;
         if (error) console.error('Delete user error:', error);
       } 
-      else if (action.type === ACTIONS.ADD_PROMOTION) {
+      else if (action.type === ACTIONS.ADD_PROMOTION || action.type === 'ADD_PROMO') {
         const p = action.payload;
         const { error } = await supabase.from('promotions').insert({
           id: p.id,
@@ -1492,7 +1710,15 @@ export function StoreProvider({ children }) {
           active: !!p.active
         });
         success = !error;
-        if (error) console.error('Add promotion error:', error);
+        if (error) {
+          console.error('Add promotion error:', error);
+          Swal.fire({
+            title: 'บันทึกโปรโมชั่นไม่สำเร็จ',
+            text: error.code === '23505' ? `โค้ด "${p.code}" มีอยู่ในระบบแล้ว กรุณาใช้โค้ดอื่น` : (error.message || JSON.stringify(error)),
+            icon: 'error',
+            confirmButtonText: 'ตกลง'
+          });
+        }
       } 
       else if (action.type === ACTIONS.UPDATE_PROMOTION) {
         const p = action.payload;
@@ -1505,12 +1731,49 @@ export function StoreProvider({ children }) {
           active: !!p.active
         }).eq('id', p.id);
         success = !error;
-        if (error) console.error('Update promotion error:', error);
+        if (error) {
+          console.error('Update promotion error:', error);
+          Swal.fire({
+            title: 'อัปเดตโปรโมชั่นไม่สำเร็จ',
+            text: error.message || JSON.stringify(error),
+            icon: 'error',
+            confirmButtonText: 'ตกลง'
+          });
+        }
       } 
-      else if (action.type === ACTIONS.DELETE_PROMOTION) {
-        const { error } = await supabase.from('promotions').delete().eq('id', action.payload);
+      else if (action.type === 'TOGGLE_PROMOTION' || action.type === 'TOGGLE_PROMO') {
+        const promoId = typeof action.payload === 'object' ? action.payload.id : action.payload;
+        const target = state.promotions.find(p => p.id === promoId);
+        const newActive = (typeof action.payload === 'object' && action.payload.active !== undefined)
+          ? action.payload.active
+          : (target ? !target.active : true);
+        const { error } = await supabase.from('promotions').update({
+          active: newActive
+        }).eq('id', promoId);
         success = !error;
-        if (error) console.error('Delete promotion error:', error);
+        if (error) {
+          console.error('Toggle promotion error:', error);
+          Swal.fire({
+            title: 'เปลี่ยนสถานะโปรโมชั่นไม่สำเร็จ',
+            text: error.message || JSON.stringify(error),
+            icon: 'error',
+            confirmButtonText: 'ตกลง'
+          });
+        }
+      }
+      else if (action.type === ACTIONS.DELETE_PROMOTION || action.type === 'DELETE_PROMO') {
+        const promoId = typeof action.payload === 'object' ? action.payload.id : action.payload;
+        const { error } = await supabase.from('promotions').delete().eq('id', promoId);
+        success = !error;
+        if (error) {
+          console.error('Delete promotion error:', error);
+          Swal.fire({
+            title: 'ลบโปรโมชั่นไม่สำเร็จ',
+            text: error.message || JSON.stringify(error),
+            icon: 'error',
+            confirmButtonText: 'ตกลง'
+          });
+        }
       } 
       else if (action.type === ACTIONS.ADD_CATEGORY) {
         const c = action.payload;
