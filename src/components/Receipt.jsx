@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '../data/store';
 import logoImg from '../assets/logo.png';
 import './Receipt.css';
@@ -178,8 +179,8 @@ const Receipt = ({ sale, onClose }) => {
     paddedItems.push(null);
   }
 
-  return (
-    <div className="modal-overlay">
+  const modalContent = (
+    <div className="modal-overlay receipt-modal-overlay" onClick={onClose}>
       <div className="receipt-modal" onClick={(e) => e.stopPropagation()}>
         <div className="receipt-paper-container" ref={containerRef}>
           <div 
@@ -356,10 +357,6 @@ const Receipt = ({ sale, onClose }) => {
                   <span className="calc-label font-bold">ราคาสินค้าทั้งสิ้น</span>
                   <span className="calc-val">{formatCurrency(subtotal)}</span>
                 </div>
-                <div className="calc-row border-top">
-                  <span className="calc-label font-bold">ภาษีมูลค่าเพิ่ม 7 %</span>
-                  <span className="calc-val">{tax > 0 ? formatCurrency(tax) : '-'}</span>
-                </div>
                 {shippingCost > 0 && (
                   <div className="calc-row border-top">
                     <span className="calc-label font-bold">ค่าจัดส่ง</span>
@@ -378,6 +375,10 @@ const Receipt = ({ sale, onClose }) => {
                     <span className="calc-val text-red font-bold">-{formatCurrency(discountAmount)}</span>
                   </div>
                 )}
+                <div className="calc-row border-top">
+                  <span className="calc-label font-bold">ภาษีมูลค่าเพิ่ม 7 %</span>
+                  <span className="calc-val">{tax > 0 ? formatCurrency(tax) : '-'}</span>
+                </div>
                 <div className="calc-row border-top highlight-paid">
                   <span className="calc-label font-bold">ยอดที่ชำระแล้ว</span>
                   <span className="calc-val text-red font-bold">{formatCurrency(cashReceived > 0 ? cashReceived : total)}</span>
@@ -439,6 +440,10 @@ const Receipt = ({ sale, onClose }) => {
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(modalContent, document.body)
+    : modalContent;
 };
 
 export default Receipt;

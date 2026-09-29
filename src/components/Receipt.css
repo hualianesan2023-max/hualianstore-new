@@ -605,77 +605,75 @@
   }
 
   /* Force white background on html and body to remove dark theme backgrounds when printing the receipt */
-  body.print-receipt-active,
-  body.print-receipt-active html {
+  html,
+  body.print-receipt-active {
     background: #ffffff !important;
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Hide all other application components and pages to ensure 0 height and no blank pages when printing receipt */
-  body.print-receipt-active .sidebar,
-  body.print-receipt-active .pos-products,
-  body.print-receipt-active .pos-cart,
-  body.print-receipt-active .pos-toast,
-  body.print-receipt-active .products-page,
-  body.print-receipt-active .customers-page,
-  body.print-receipt-active .profit-loss-page,
-  body.print-receipt-active .users-page,
-  body.print-receipt-active .page-container {
+  /* When printing receipt, completely hide #root so NO other app components or pages print */
+  body.print-receipt-active #root {
     display: none !important;
   }
 
-  /* Reset all wrapper layouts to flow naturally and occupy 0 extra space when printing receipt */
-  body.print-receipt-active #root,
-  body.print-receipt-active .app-container,
-  body.print-receipt-active .main-content,
-  body.print-receipt-active .pos-container {
+  /* In case anything is rendered inside or outside #root that is not the receipt overlay */
+  body.print-receipt-active .sidebar,
+  body.print-receipt-active .pos-products,
+  body.print-receipt-active .pos-cart,
+  body.print-receipt-active .pos-toast {
+    display: none !important;
+  }
+
+  /* Reset modal overlay and containers so the receipt paper flows as a normal document page */
+  body.print-receipt-active .receipt-modal-overlay,
+  body.print-receipt-active .modal-overlay {
+    position: static !important;
     display: block !important;
-    position: static !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    height: auto !important;
-    min-height: 0 !important;
-    overflow: visible !important;
-    background: none !important;
-    box-shadow: none !important;
-    border: none !important;
-  }
-
-  /* Hide everything else inside body using visibility when printing receipt */
-  body.print-receipt-active * {
-    visibility: hidden;
-    background: none !important;
-  }
-
-  body.print-receipt-active .modal-overlay,
-  body.print-receipt-active .receipt-modal,
-  body.print-receipt-active .receipt-paper-container,
-  body.print-receipt-active .receipt-paper,
-  body.print-receipt-active .receipt-paper * {
-    visibility: visible;
-  }
-
-  /* Make modal overlay and wrappers transparent static boxes that do not clip when printing receipt */
-  body.print-receipt-active .modal-overlay,
-  body.print-receipt-active .receipt-modal,
-  body.print-receipt-active .receipt-paper-container {
-    position: static !important;
+    visibility: visible !important;
     width: 100% !important;
     height: auto !important;
     min-height: 0 !important;
+    max-height: none !important;
     overflow: visible !important;
-    background: #ffffff !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    inset: auto !important;
+    z-index: auto !important;
+  }
+
+  body.print-receipt-active .receipt-modal,
+  body.print-receipt-active .receipt-paper-container {
+    position: static !important;
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: transparent !important;
     padding: 0 !important;
     margin: 0 !important;
     border: none !important;
     box-shadow: none !important;
     border-radius: 0 !important;
+    animation: none !important;
   }
 
   /* Define exact A4 dimensions with zero margins on @page and padding on the element to act as margins */
-  .receipt-paper {
+  .receipt-paper,
+  body.print-receipt-active .receipt-paper {
     position: relative !important;
     width: 210mm !important;
     height: 297mm !important;
@@ -694,6 +692,13 @@
     overflow: hidden !important;
     page-break-inside: avoid !important;
     page-break-after: avoid !important;
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .receipt-paper * {
+    visibility: visible !important;
   }
 
   /* Hide action buttons when printing */

@@ -331,26 +331,28 @@ const Quotation = () => {
   const calculateTotals = (currentItems, discount, currentVatType, shipping = 0, installation = 0) => {
     const rawSubtotal = currentItems.reduce((sum, item) => sum + (item.sellPrice * item.quantity), 0);
     const postDiscount = Math.max(0, rawSubtotal - Number(discount || 0));
+    const extraFees = Number(shipping || 0) + Number(installation || 0);
     
     let subtotal = postDiscount;
     let tax = 0;
-    let total = postDiscount;
+    let grandTotal;
 
     if (currentVatType === 'inclusive') {
+      // VAT already included in prices — fees are excluded from VAT
       subtotal = postDiscount / 1.07;
       tax = postDiscount - subtotal;
-      total = postDiscount;
+      grandTotal = postDiscount + extraFees;
     } else if (currentVatType === 'exclusive') {
+      // VAT computed on (goods after discount + shipping + installation)
       subtotal = postDiscount;
-      tax = postDiscount * 0.07;
-      total = postDiscount + tax;
+      const taxBase = postDiscount + extraFees;
+      tax = taxBase * 0.07;
+      grandTotal = postDiscount + tax + extraFees;
     } else {
       subtotal = postDiscount;
       tax = 0;
-      total = postDiscount;
+      grandTotal = postDiscount + extraFees;
     }
-
-    const grandTotal = total + Number(shipping || 0) + Number(installation || 0);
 
     return {
       subtotal: Math.round(subtotal * 100) / 100,
@@ -1099,10 +1101,6 @@ const Quotation = () => {
                     <span>มูลค่าราคาสินค้าก่อน VAT:</span>
                     <span>฿{formatCurrency(totals.subtotal)}</span>
                   </div>
-                  <div className="calc-line">
-                    <span>ภาษีมูลค่าเพิ่ม (VAT 7%):</span>
-                    <span>{totals.tax > 0 ? `฿${formatCurrency(totals.tax)}` : 'ยกเว้น'}</span>
-                  </div>
                   {shippingCost > 0 && (
                     <div className="calc-line">
                       <span>ค่าจัดส่ง / ค่าขนส่ง:</span>
@@ -1115,6 +1113,10 @@ const Quotation = () => {
                       <span>฿{formatCurrency(installationCost)}</span>
                     </div>
                   )}
+                  <div className="calc-line">
+                    <span>ภาษีมูลค่าเพิ่ม (VAT 7%):</span>
+                    <span>{totals.tax > 0 ? `฿${formatCurrency(totals.tax)}` : 'ยกเว้น'}</span>
+                  </div>
                   <div className="calc-line total highlight-net">
                     <span>ยอดเงินสุทธิทั้งสิ้น (Net Grand Total):</span>
                     <span>฿{formatCurrency(totals.total)}</span>
@@ -1570,11 +1572,6 @@ const QuotationPreviewModal = ({ quotation, store, onClose }) => {
                   </div>
                 )}
 
-                <div className="calc-field border-top">
-                  <span className="lbl font-bold">ภาษีมูลค่าเพิ่ม / VAT (7%) :</span>
-                  <span className="val">{quotation.tax > 0 ? formatCurrency(quotation.tax) : 'ยกเว้นภาษี'}</span>
-                </div>
-
                 {quotation.shippingCost > 0 && (
                   <div className="calc-field border-top">
                     <span className="lbl font-bold">ค่าจัดส่ง / Shipping :</span>
@@ -1588,6 +1585,11 @@ const QuotationPreviewModal = ({ quotation, store, onClose }) => {
                     <span className="val">฿{formatCurrency(quotation.installationCost)}</span>
                   </div>
                 )}
+
+                <div className="calc-field border-top">
+                  <span className="lbl font-bold">ภาษีมูลค่าเพิ่ม / VAT (7%) :</span>
+                  <span className="val">{quotation.tax > 0 ? formatCurrency(quotation.tax) : 'ยกเว้นภาษี'}</span>
+                </div>
 
                 <div className="calc-field border-top highlight-grand">
                   <span className="lbl font-bold">ยอดเงินสุทธิ / Grand Total :</span>

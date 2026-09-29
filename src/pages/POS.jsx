@@ -574,14 +574,15 @@ const POS = () => {
 
   if (applyVat) {
     if (isVatInclusive) {
-      // VAT Inclusive (Vat ใน)
+      // VAT Inclusive (Vat ใน): total price includes VAT already
       total = Math.round((afterDiscountCatalog + extraFees) * 100) / 100;
       subtotal = Math.round((total / 1.07) * 100) / 100;
       tax = Math.round((total - subtotal) * 100) / 100;
     } else {
-      // VAT Exclusive (Vat นอก)
+      // VAT Exclusive (Vat นอก): compute VAT on (goods + shipping + installation)
       subtotal = afterDiscountCatalog;
-      tax = Math.round(subtotal * taxRate * 100) / 100;
+      const taxBase = subtotal + extraFees;
+      tax = Math.round(taxBase * taxRate * 100) / 100;
       total = Math.round((subtotal + tax + extraFees) * 100) / 100;
     }
   } else {
@@ -729,6 +730,7 @@ const POS = () => {
               onChange={(e) => setSelectedSalesperson(e.target.value)}
             >
               <option value="หน้าร้าน">🏪 หน้าร้าน</option>
+              <option value="สาขา">🏢 สาขา</option>
               <option value="Shopee">🛍️ Shopee</option>
               <option value="Tiktok">🎵 Tiktok</option>
               <option value="เพจ">📱 เพจ</option>
@@ -1599,14 +1601,6 @@ const POS = () => {
                 </span>
               </div>
             )}
-            {applyVat && (
-              <div className="cart-summary-row tax">
-                <span>ภาษีมูลค่าเพิ่ม (7%)</span>
-                <span>
-                  ฿{tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            )}
             {shippingNum > 0 && (
               <div className="cart-summary-row" style={{ color: '#e5e7eb' }}>
                 <span>🚚 ค่าส่ง</span>
@@ -1620,6 +1614,14 @@ const POS = () => {
                 <span>🔧 ค่าติดตั้ง</span>
                 <span>
                   ฿{installationNum.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
+            {applyVat && (
+              <div className="cart-summary-row tax">
+                <span>ภาษีมูลค่าเพิ่ม (7%)</span>
+                <span>
+                  ฿{tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                 </span>
               </div>
             )}

@@ -387,8 +387,18 @@ const ProfitLoss = () => {
           </div>
 
           <script>
-            window.onload = function() {
+            let printed = false;
+            function triggerPrint() {
+              if (printed) return;
+              printed = true;
+              window.focus();
               window.print();
+            }
+            if (document.readyState === 'complete') {
+              setTimeout(triggerPrint, 200);
+            } else {
+              window.addEventListener('load', function() { setTimeout(triggerPrint, 200); });
+              setTimeout(triggerPrint, 1000);
             }
           </script>
         </body>
@@ -397,6 +407,7 @@ const ProfitLoss = () => {
 
     printWindow.document.write(html);
     printWindow.document.close();
+    printWindow.focus();
   };
 
   return (
