@@ -1019,11 +1019,18 @@ const ReceiveStockModal = ({ isOpen, onClose, onStockReceived }) => {
                         −
                       </button>
                       <input
-                        type="number"
-                        min="1"
+                        type="text"
+                        inputMode="decimal"
                         className="qty-input-box"
                         value={itemQuantity}
-                        onChange={(e) => setItemQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (/^\d*\.?\d{0,3}$/.test(v)) setItemQuantity(v);
+                        }}
+                        onBlur={(e) => {
+                          const n = Math.round(parseFloat(e.target.value) * 1000) / 1000;
+                          setItemQuantity(n > 0 ? n : 1);
+                        }}
                       />
                       <button
                         type="button"

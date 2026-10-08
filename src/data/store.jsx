@@ -2,6 +2,9 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback, u
 import { supabase } from './supabaseClient';
 import Swal from 'sweetalert2';
 
+// Round to 3 decimals (supports fractional stock like 0.5 kg without float drift)
+const r3 = (n) => Math.round(Number(n || 0) * 1000) / 1000;
+
 // ======================================
 // Actions
 // ======================================
@@ -205,18 +208,18 @@ function storeReducer(state, action) {
         let stockKookkai = Number(product.stockKookkai || 0);
         let stockBig = Number(product.stockBig || 0);
         if (loc === 'โกดังกุ๊กไก่') {
-          stockKookkai = Math.max(0, stockKookkai - qty);
+          stockKookkai = r3(Math.max(0, stockKookkai - qty));
         } else if (loc === 'ออฟฟิศ') {
-          stockOffice = Math.max(0, stockOffice - qty);
+          stockOffice = r3(Math.max(0, stockOffice - qty));
         } else {
-          stockBig = Math.max(0, stockBig - qty);
+          stockBig = r3(Math.max(0, stockBig - qty));
         }
         return {
           ...product,
           stockOffice,
           stockKookkai,
           stockBig,
-          stock: stockOffice + stockKookkai + stockBig,
+          stock: r3(stockOffice + stockKookkai + stockBig),
         };
       });
       return { ...state, sales: newSales, products: updatedProducts };
@@ -246,18 +249,18 @@ function storeReducer(state, action) {
         let stockKookkai = Number(product.stockKookkai || 0);
         let stockBig = Number(product.stockBig || 0);
         if (loc === 'โกดังกุ๊กไก่') {
-          stockKookkai += qty;
+          stockKookkai = r3(stockKookkai + qty);
         } else if (loc === 'ออฟฟิศ') {
-          stockOffice += qty;
+          stockOffice = r3(stockOffice + qty);
         } else {
-          stockBig += qty;
+          stockBig = r3(stockBig + qty);
         }
         return {
           ...product,
           stockOffice,
           stockKookkai,
           stockBig,
-          stock: stockOffice + stockKookkai + stockBig,
+          stock: r3(stockOffice + stockKookkai + stockBig),
         };
       });
 
@@ -1481,11 +1484,11 @@ export function StoreProvider({ children }) {
             // Determine stock column to update
             let updateFields = {};
             if (loc === 'โกดังกุ๊กไก่') {
-              updateFields = { stock_kookkai: Math.max(0, (product.stock_kookkai || 0) - qty) };
+              updateFields = { stock_kookkai: r3(Math.max(0, Number(product.stock_kookkai || 0) - qty)) };
             } else if (loc === 'ออฟฟิศ') {
-              updateFields = { stock_office: Math.max(0, (product.stock_office || 0) - qty) };
+              updateFields = { stock_office: r3(Math.max(0, Number(product.stock_office || 0) - qty)) };
             } else {
-              updateFields = { stock_big: Math.max(0, (product.stock_big || 0) - qty) };
+              updateFields = { stock_big: r3(Math.max(0, Number(product.stock_big || 0) - qty)) };
             }
 
             // Update stock
@@ -1579,11 +1582,11 @@ export function StoreProvider({ children }) {
           if (!fetchErr && prod) {
             let updateFields = {};
             if (loc === 'โกดังกุ๊กไก่') {
-              updateFields = { stock_kookkai: Number(prod.stock_kookkai || 0) + qty };
+              updateFields = { stock_kookkai: r3(Number(prod.stock_kookkai || 0) + qty) };
             } else if (loc === 'ออฟฟิศ') {
-              updateFields = { stock_office: Number(prod.stock_office || 0) + qty };
+              updateFields = { stock_office: r3(Number(prod.stock_office || 0) + qty) };
             } else {
-              updateFields = { stock_big: Number(prod.stock_big || 0) + qty };
+              updateFields = { stock_big: r3(Number(prod.stock_big || 0) + qty) };
             }
             const { error: stockErr } = await supabase.from('products').update(updateFields).eq('id', prodId);
             if (stockErr) console.error('Restore stock error:', stockErr);

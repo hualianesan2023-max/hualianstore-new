@@ -11,6 +11,13 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Serve local parts images from D:\โปรแกรมคลัง\Mydata\images
+const localPartsImagesDir = 'D:\\โปรแกรมคลัง\\Mydata\\images';
+if (require('fs').existsSync(localPartsImagesDir)) {
+  app.use('/local-parts-images', express.static(localPartsImagesDir));
+  console.log(`Serving local parts images from: ${localPartsImagesDir}`);
+}
+
 // Configure PostgreSQL connection pool for Neon or Supabase
 const pool = new Pool({
   connectionString: process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL,

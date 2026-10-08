@@ -43,7 +43,7 @@ const Inventory = () => {
     e.preventDefault();
     if (!adjustProduct || !adjustAmount) return;
 
-    const amount = parseInt(adjustAmount);
+    const amount = parseFloat(adjustAmount);
     if (isNaN(amount)) return;
 
     // Get current stock of the chosen location
@@ -56,7 +56,7 @@ const Inventory = () => {
       currentLocStock = Number(adjustProduct.stockBig || 0);
     }
 
-    const newStock = Math.max(0, currentLocStock + amount);
+    const newStock = Math.max(0, Math.round((currentLocStock + amount) * 1000) / 1000);
 
     dispatch({
       type: 'SET_STOCK',
@@ -323,9 +323,10 @@ const Inventory = () => {
                   <label htmlFor="adjust-amount">จำนวนที่ปรับปรุง (ใช้ค่าติดลบเพื่อลดสต็อก)</label>
                   <input
                     type="number"
+                    step="any"
                     id="adjust-amount"
                     className="input"
-                    placeholder="เช่น 50 หรือ -10"
+                    placeholder="เช่น 50, -10 หรือ -0.5"
                     required
                     value={adjustAmount}
                     onChange={(e) => setAdjustAmount(e.target.value)}

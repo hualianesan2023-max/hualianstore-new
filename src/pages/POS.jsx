@@ -599,7 +599,7 @@ const POS = () => {
         return prevCart
           .map((item) => {
             if (item.id !== cartItemId) return item;
-            const newQty = item.quantity + delta;
+            const newQty = Math.round((Number(item.quantity) + delta) * 1000) / 1000;
             const product = normalisedProducts.find((p) => p.id === item.productId);
             if (!product) return item;
 
@@ -618,6 +618,32 @@ const POS = () => {
           })
           .filter((item) => item.quantity > 0);
       });
+    },
+    [normalisedProducts, showToast]
+  );
+
+  // === Set exact quantity (supports decimals, e.g. 0.5 กก.) ===
+  const setQuantity = useCallback(
+    (cartItemId, rawValue) => {
+      const parsed = Math.round(parseFloat(rawValue) * 1000) / 1000;
+      if (!Number.isFinite(parsed) || parsed <= 0) return;
+      setCart((prevCart) =>
+        prevCart.map((item) => {
+          if (item.id !== cartItemId) return item;
+          const product = normalisedProducts.find((p) => p.id === item.productId);
+          if (!product) return item;
+          let maxStock = 0;
+          const loc = item.selectedLocation;
+          if (loc === 'โกดังใหญ่') maxStock = product.stockBig;
+          else if (loc === 'โกดังกุ๊กไก่') maxStock = product.stockKookkai;
+          else if (loc === 'ออฟฟิศ') maxStock = product.stockOffice;
+          if (parsed > maxStock) {
+            showToast(`⚠️ คลัง${loc} สต็อกคงเหลือ: ${maxStock} ${product.unit || 'ชิ้น'}`, 'error');
+            return item;
+          }
+          return { ...item, quantity: parsed };
+        })
+      );
     },
     [normalisedProducts, showToast]
   );
@@ -1370,7 +1396,28 @@ const POS = () => {
                       <button onClick={() => updateQuantity(item.id, -1)}>
                         −
                       </button>
-                      <span className="qty">{item.quantity}</span>
+                      <input
+                        key={`${item.id}-${item.quantity}`}
+                        className="qty"
+                        type="number"
+                        inputMode="decimal"
+                        step="any"
+                        min="0.001"
+                        defaultValue={item.quantity}
+                        title="พิมพ์จำนวนได้ รองรับทศนิยม เช่น 0.5"
+                        onFocus={(e) => e.target.select()}
+                        onBlur={(e) => {
+                          const typed = e.target.value;
+                          e.target.value = item.quantity;
+                          if (Number(typed) !== Number(item.quantity)) setQuantity(item.id, typed);
+                        }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                        style={{
+                          width: '58px', textAlign: 'center', background: 'transparent',
+                          border: '1px solid #2d3148', borderRadius: '6px', color: 'inherit',
+                          padding: '2px 4px', fontSize: 'inherit', fontWeight: 'inherit', MozAppearance: 'textfield'
+                        }}
+                      />
                       <button onClick={() => updateQuantity(item.id, 1)}>
                         +
                       </button>

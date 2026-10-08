@@ -992,11 +992,18 @@ const Quotation = () => {
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <input 
-                              type="number" 
+                              type="text" 
+                              inputMode="decimal"
                               className="table-qty-input"
-                              min="1"
                               value={item.quantity}
-                              onChange={(e) => updateItemProp(idx, 'quantity', parseInt(e.target.value, 10) || 1)}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (/^\d*\.?\d{0,3}$/.test(v)) updateItemProp(idx, 'quantity', v);
+                              }}
+                              onBlur={(e) => {
+                                const n = Math.round(parseFloat(e.target.value) * 1000) / 1000;
+                                updateItemProp(idx, 'quantity', n > 0 ? n : 1);
+                              }}
                             />
                           </td>
                           <td>
@@ -1220,11 +1227,18 @@ const Quotation = () => {
                 <div className="form-group">
                   <label className="input-label required">จำนวน</label>
                   <input 
-                    type="number" 
+                    type="text" 
+                    inputMode="decimal"
                     className="form-input" 
-                    min="1"
                     value={customQty}
-                    onChange={(e) => setCustomQty(parseInt(e.target.value, 10) || 1)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (/^\d*\.?\d{0,3}$/.test(v)) setCustomQty(v);
+                    }}
+                    onBlur={(e) => {
+                      const n = Math.round(parseFloat(e.target.value) * 1000) / 1000;
+                      setCustomQty(n > 0 ? n : 1);
+                    }}
                     required
                   />
                 </div>

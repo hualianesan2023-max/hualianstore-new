@@ -24,6 +24,13 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
     { path: '/repair', icon: '🔧', label: 'งานซ่อม/ส่งเครื่อง', disabled: false },
   ];
 
+  const partsItems = [
+    { path: '/parts', icon: '🔩', label: 'คลังอะไหล่', disabled: false },
+    { path: '/parts-pos', icon: '🛒', label: 'ขายอะไหล่', disabled: isSaleRole },
+    { path: '/parts-history', icon: '📋', label: 'ประวัติการขายอะไหล่', disabled: false },
+    { path: '/parts-quotation', icon: '📄', label: 'ใบเสนอราคาอะไหล่', disabled: false },
+  ];
+
   const generalItems = [
     { path: '/customers', icon: '👥', label: 'ลูกค้า', disabled: isSaleRole },
     { path: '/profit-loss', icon: '📊', label: 'รายงาน', disabled: false },
@@ -107,6 +114,9 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
         <nav className="sidebar-nav">
           <div className="sidebar-group-header">จัดการเครื่อง HUALIAN</div>
           {hualianItems.map(renderNavItem)}
+
+          <div className="sidebar-group-header" style={{ marginTop: 'var(--space-md)' }}>การจัดการอะไหล่</div>
+          {partsItems.map(renderNavItem)}
 
           <div className="sidebar-group-header" style={{ marginTop: 'var(--space-md)' }}>ทั่วไป</div>
           {generalItems.map(renderNavItem)}

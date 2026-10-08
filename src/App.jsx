@@ -11,6 +11,10 @@ import ProfitLoss from './pages/ProfitLoss';
 import Users from './pages/Users';
 import Quotation from './pages/Quotation';
 import Repair from './pages/Repair';
+import PartsInventory from './pages/PartsInventory';
+import PartsPOS from './pages/PartsPOS';
+import PartsHistory from './pages/PartsHistory';
+import PartsQuotation from './pages/PartsQuotation';
 import { showAlert } from './utils/alerts';
 import './App.css';
 
@@ -90,6 +94,10 @@ function AppContent() {
             <Route path="/products" element={<Products />} />
             <Route path="/quotation" element={<Quotation />} />
             <Route path="/repair" element={<Repair />} />
+            <Route path="/parts" element={<PartsInventory />} />
+            <Route path="/parts-pos" element={isSaleRole ? <Navigate to="/parts" replace /> : <PartsPOS />} />
+            <Route path="/parts-history" element={<PartsHistory />} />
+            <Route path="/parts-quotation" element={<PartsQuotation />} />
             <Route path="/customers" element={isSaleRole ? <Navigate to="/products" replace /> : <Customers />} />
             <Route path="/profit-loss" element={<ProfitLoss />} />
             <Route path="/users" element={(isUserRole || isSaleRole) ? <Navigate to={defaultHome} replace /> : <Users />} />
