@@ -1352,6 +1352,59 @@ export function StoreProvider({ children }) {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'quotations' },
+        async (payload) => {
+          if (payload.eventType === 'DELETE') {
+            dispatch({ type: ACTIONS.DELETE_QUOTATION, payload: payload.old.id });
+          } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            try {
+              const { data: dbItems } = await supabase
+                .from('quotation_items')
+                .select('*')
+                .eq('quotation_id', payload.new.id);
+              const mappedItems = (dbItems || []).map((it) => ({
+                productId: it.product_id,
+                name: it.product_name,
+                quantity: Number(it.quantity || 1),
+                sellPrice: Number(it.sell_price || 0),
+                unit: it.unit || 'เครื่อง'
+              }));
+              const quotObj = {
+                id: payload.new.id,
+                date: payload.new.date,
+                customerType: payload.new.customer_type || 'general',
+                customerId: payload.new.customer_id || null,
+                customerName: payload.new.customer_name,
+                customerPhone: payload.new.customer_phone || null,
+                customerAddress: payload.new.customer_address || null,
+                customerTaxId: payload.new.customer_tax_id || null,
+                companyBranch: payload.new.company_branch || null,
+                validityDays: payload.new.validity_days || '30 วัน',
+                deliveryDays: payload.new.delivery_days || '7 วัน',
+                paymentTerms: payload.new.payment_terms || 'โอนเงินเข้าบัญชี',
+                salesperson: payload.new.salesperson || null,
+                discountAmount: Number(payload.new.discount_amount || 0),
+                shippingCost: Number(payload.new.shipping_cost || 0),
+                installationCost: Number(payload.new.installation_cost || 0),
+                vatType: payload.new.vat_type || 'inclusive',
+                subtotal: Number(payload.new.subtotal || 0),
+                tax: Number(payload.new.tax || 0),
+                total: Number(payload.new.total || 0),
+                items: mappedItems
+              };
+              if (payload.eventType === 'INSERT') {
+                dispatch({ type: ACTIONS.ADD_QUOTATION, payload: quotObj });
+              } else {
+                dispatch({ type: ACTIONS.UPDATE_QUOTATION, payload: quotObj });
+              }
+            } catch (err) {
+              console.error('Realtime quotation sync error:', err);
+            }
+          }
+        }
+      )
       .subscribe();
 
     return () => {

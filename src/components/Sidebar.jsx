@@ -34,7 +34,6 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
   const generalItems = [
     { path: '/customers', icon: '👥', label: 'ลูกค้า', disabled: isSaleRole },
     { path: '/profit-loss', icon: '📊', label: 'รายงาน', disabled: false },
-    { path: '/users', icon: '🔑', label: 'การจัดการผู้ใช้งาน', disabled: isUserRole || isSaleRole },
     { path: '/settings', icon: '⚙️', label: 'ตั้งค่าข้อมูลของร้านเอง', disabled: isUserRole || isSaleRole },
   ];
 

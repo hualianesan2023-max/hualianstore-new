@@ -182,8 +182,8 @@ const Inventory = () => {
 
                   return (
                     <tr key={product.id}>
-                      <td style={{ textAlign: 'center', fontSize: '1.5rem' }}>
-                        {product.image || '📦'}
+                      <td style={{ textAlign: 'center' }}>
+                        <span style={{ fontSize: '1.5rem' }}>{product.image || '📦'}</span>
                       </td>
                       <td>
                         <div style={{ fontWeight: '600' }}>{product.name}</div>

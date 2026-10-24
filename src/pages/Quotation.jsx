@@ -526,8 +526,9 @@ const Quotation = () => {
     return matchesSearch && matchesCategory;
   });
 
-  // Filter history quotations list (newest first)
+  // Filter history quotations list (newest first, excluding spare parts quotations)
   const filteredHistory = quotations.filter(q => {
+    if (q.id && q.id.startsWith('QTS')) return false;
     return q.id.toLowerCase().includes(historySearch.toLowerCase()) ||
            q.customerName.toLowerCase().includes(historySearch.toLowerCase()) ||
            (q.salesperson && q.salesperson.toLowerCase().includes(historySearch.toLowerCase()));

@@ -603,7 +603,9 @@ const Products = () => {
                       <tr key={product.id}>
                         <td>
                           <div className="product-info">
-                            <div className="product-emoji">{product.image}</div>
+                            <div className="product-emoji">
+                              {product.image || '📦'}
+                            </div>
                             <div>
                               <div className="product-name">{product.name}</div>
                               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>

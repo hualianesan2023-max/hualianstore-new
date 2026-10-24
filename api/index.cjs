@@ -12,11 +12,52 @@ app.use(cors());
 app.use(express.json());
 
 // Serve local parts images from D:\โปรแกรมคลัง\Mydata\images
-const localPartsImagesDir = 'D:\\โปรแกรมคลัง\\Mydata\\images';
-if (require('fs').existsSync(localPartsImagesDir)) {
-  app.use('/local-parts-images', express.static(localPartsImagesDir));
-  console.log(`Serving local parts images from: ${localPartsImagesDir}`);
-}
+const localPartsImagesDir = process.env.LOCAL_IMAGES_DIR || 'D:\\โปรแกรมคลัง\\Mydata\\images';
+
+const countValidImgs = (dir) => {
+  try {
+    if (!require('fs').existsSync(dir)) return 0;
+    return require('fs').readdirSync(dir).filter(f => /\.(jpg|jpeg|png|webp|bmp|gif)$/i.test(f)).length;
+  } catch (e) { return 0; }
+};
+
+app.get('/api/local-images-status', (req, res) => {
+  const imagesCount = countValidImgs(localPartsImagesDir);
+  res.json({
+    connected: imagesCount > 0,
+    imagesDir: localPartsImagesDir,
+    imagesExists: require('fs').existsSync(localPartsImagesDir),
+    imagesCount
+  });
+});
+
+const resolveLocalImage = (searchDirs, rawFile) => {
+  if (!rawFile) return null;
+  const baseName = path.basename(rawFile.split('?')[0]);
+  const noExt = baseName.replace(/\.[^.]+$/, '');
+  const cleanAlpha = noExt.replace(/[^a-zA-Z0-9]/g, '');
+  const exts = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'];
+  const candidates = [baseName, noExt, cleanAlpha, noExt.toLowerCase(), cleanAlpha.toLowerCase(), noExt.toUpperCase(), cleanAlpha.toUpperCase()];
+
+  for (const dir of searchDirs) {
+    if (!require('fs').existsSync(dir)) continue;
+    for (const c of candidates) {
+      const p1 = path.join(dir, c);
+      if (require('fs').existsSync(p1) && require('fs').statSync(p1).isFile()) return p1;
+      for (const ext of exts) {
+        const p2 = path.join(dir, c + ext);
+        if (require('fs').existsSync(p2) && require('fs').statSync(p2).isFile()) return p2;
+      }
+    }
+  }
+  return null;
+};
+
+app.use('/local-parts-images/:file', (req, res) => {
+  const file = resolveLocalImage([localPartsImagesDir], req.params.file);
+  if (file) return res.sendFile(path.resolve(file));
+  res.status(404).send('Not found');
+});
 
 // Configure PostgreSQL connection pool for Neon or Supabase
 const pool = new Pool({

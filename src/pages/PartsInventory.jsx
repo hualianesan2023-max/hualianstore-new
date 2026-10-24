@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import * as XLSX from 'xlsx';
 import { supabase } from '../data/supabaseClient';
 import { showAlert, showConfirm } from '../utils/alerts';
+import { getPartImageUrl, LocalImageToolbar } from '../utils/localImageProvider';
 import './PartsInventory.css';
 
 // ── Image Compressor ─────────────────────────────────────────
@@ -57,26 +58,6 @@ const safeInt = (v) => {
   return isNaN(n) ? 0 : n;
 };
 
-// ── Helper to resolve local image from D:\โปรแกรมคลัง\Mydata\images ──
-const getPartImageUrl = (part) => {
-  if (!part) return null;
-  // 1. If base64 image data exists from manual upload
-  if (part.image_data) return part.image_data;
-
-  // 2. If image_name exists from Excel / Access (e.g. HL-000001.jpg)
-  if (part.image_name && String(part.image_name).trim()) {
-    const clean = String(part.image_name).trim();
-    return `/local-parts-images/${encodeURIComponent(clean)}`;
-  }
-
-  // 3. Fallback based on part_code (e.g. HL-000001 -> HL-000001.jpg)
-  if (part.part_code && String(part.part_code).trim()) {
-    return `/local-parts-images/${encodeURIComponent(String(part.part_code).trim())}.jpg`;
-  }
-
-  return null;
-};
-
 // ── Component ────────────────────────────────────────────────
 const PartsInventory = () => {
   const [parts, setParts]           = useState([]);
@@ -115,7 +96,24 @@ const PartsInventory = () => {
     }
   }, []);
 
-  useEffect(() => { fetchParts(); }, [fetchParts]);
+  useEffect(() => {
+    fetchParts();
+
+    const channel = supabase
+      .channel('parts_inventory_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'parts' },
+        () => {
+          fetchParts();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchParts]);
 
   // ── Dynamic Categories & Types from Database ──
   const dbCategories = useMemo(() => {
@@ -558,7 +556,8 @@ const PartsInventory = () => {
           <h1 className="pi-title">🔩 คลังอะไหล่</h1>
           <span className="pi-subtitle">{parts.length} รายการในคลัง</span>
         </div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <LocalImageToolbar />
           <button
             className="pi-btn-import"
             onClick={() => {
@@ -806,9 +805,12 @@ const PartsInventory = () => {
                       <span style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
                         (ที่อยู่: D:\โปรแกรมคลัง\Mydata\images)
                       </span>
-                      <button className="pi-btn-sm" onClick={(e) => openEdit(selectedPart, e)}>
-                        📷 อัพโหลดรูปใหม่
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center', marginTop: '4px' }}>
+                        <LocalImageToolbar />
+                        <button className="pi-btn-sm" onClick={(e) => openEdit(selectedPart, e)}>
+                          📷 อัพโหลดรูปใหม่
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
