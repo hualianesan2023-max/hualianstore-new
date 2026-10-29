@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { useStore } from '../data/store';
+import { supabase } from '../data/supabaseClient';
 import './Customers.css';
 import { showAlert, showConfirm } from '../utils/alerts';
 
@@ -257,16 +258,45 @@ const Customers = () => {
 
   // Confirm Import Customers
   const handleConfirmImport = async () => {
-    if (!previewList || previewList.length === 0) return;
+    if (!previewList || previewList.length === 0 || isImporting) return;
     setIsImporting(true);
 
     try {
-      await dispatch({
-        type: 'ADD_CUSTOMERS_BULK',
-        payload: previewList
+      // Re-verify live max XL- customer ID from Supabase right before bulk insert
+      const prefix = 'XL-';
+      let liveMaxNum = 0;
+      const { data: liveCusts } = await supabase
+        .from('customers')
+        .select('id')
+        .ilike('id', `${prefix}%`)
+        .limit(10000);
+      (liveCusts || customers || []).forEach((c) => {
+        if (c.id && String(c.id).toUpperCase().startsWith(prefix)) {
+          const n = parseInt(String(c.id).slice(prefix.length), 10);
+          if (!isNaN(n) && n > liveMaxNum) liveMaxNum = n;
+        }
+      });
+      const existingIdSet = new Set((liveCusts || customers || []).map((c) => String(c.id).toUpperCase()));
+
+      let nextOffset = 0;
+      const safeImportList = previewList.map((item) => {
+        let cid = item.id ? String(item.id).trim() : '';
+        if (!cid || existingIdSet.has(cid.toUpperCase())) {
+          nextOffset++;
+          cid = `${prefix}${String(liveMaxNum + nextOffset).padStart(5, '0')}`;
+          existingIdSet.add(cid.toUpperCase());
+        } else {
+          existingIdSet.add(cid.toUpperCase());
+        }
+        return { ...item, id: cid };
       });
 
-      showAlert('นำเข้าข้อมูลสำเร็จ! 🎉', `นำเข้าข้อมูลลูกค้าเรียบร้อยแล้วทั้งหมด ${previewList.length} รายการ`, 'success');
+      await dispatch({
+        type: 'ADD_CUSTOMERS_BULK',
+        payload: safeImportList
+      });
+
+      showAlert('นำเข้าข้อมูลสำเร็จ! 🎉', `นำเข้าข้อมูลลูกค้าเรียบร้อยแล้วทั้งหมด ${safeImportList.length} รายการ`, 'success');
       setShowImportModal(false);
       setPreviewList([]);
       setImportFileName('');
@@ -279,7 +309,7 @@ const Customers = () => {
   };
 
   // Handle Submit Form
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!form.name.trim() || !form.phone.trim()) {
@@ -289,7 +319,7 @@ const Customers = () => {
 
     if (currentCustomer) {
       // Edit mode
-      dispatch({
+      await dispatch({
         type: 'UPDATE_CUSTOMER',
         payload: {
           id: currentCustomer.id,
@@ -300,14 +330,15 @@ const Customers = () => {
     } else {
       // Add mode
       const newId = generateCustomerId(customers);
-      dispatch({
+      const newPayload = {
+        id: newId,
+        ...form,
+      };
+      await dispatch({
         type: 'ADD_CUSTOMER',
-        payload: {
-          id: newId,
-          ...form,
-        },
+        payload: newPayload,
       });
-      showToast('👤 เพิ่มลูกค้าใหม่เรียบร้อยแล้ว');
+      showToast(`👤 เพิ่มลูกค้าใหม่ (${newPayload.id}) เรียบร้อยแล้ว`);
     }
 
     setShowModal(false);

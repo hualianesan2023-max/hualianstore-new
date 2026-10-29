@@ -461,6 +461,15 @@
 .pi-field input:focus,
 .pi-field select:focus { border-color: #3b82f6; }
 .pi-field select option { background: #1e293b; }
+.pi-field input:read-only,
+.pi-field input.pi-input-readonly {
+  background: #1e293b !important;
+  color: #94a3b8 !important;
+  border-color: #334155 !important;
+  cursor: not-allowed !important;
+  font-weight: 600;
+  user-select: none;
+}
 
 .pi-field-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .pi-field-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }

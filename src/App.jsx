@@ -15,6 +15,7 @@ import PartsInventory from './pages/PartsInventory';
 import PartsPOS from './pages/PartsPOS';
 import PartsHistory from './pages/PartsHistory';
 import PartsQuotation from './pages/PartsQuotation';
+import MonthlyLicenseLock from './components/MonthlyLicenseLock';
 import { showAlert } from './utils/alerts';
 import './App.css';
 
@@ -114,6 +115,7 @@ function AppContent() {
 function App() {
   return (
     <StoreProvider>
+      <MonthlyLicenseLock />
       <AppContent />
     </StoreProvider>
   );

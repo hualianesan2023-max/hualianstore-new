@@ -352,8 +352,8 @@ const ReceiveStockModal = ({ isOpen, onClose, onStockReceived }) => {
 
     if (!confirm) return;
 
-    // 1. Process Stock updates
-    finalItems.forEach((it) => {
+    // 1. Process Stock updates (Atomic Compare-And-Swap for multi-user safety)
+    for (const it of finalItems) {
       if (it.isNewProduct) {
         const newProd = {
           id: it.productId,
@@ -374,36 +374,23 @@ const ReceiveStockModal = ({ isOpen, onClose, onStockReceived }) => {
           location: it.location,
           image: '📦',
         };
-        dispatch({ type: 'ADD_PRODUCT', payload: newProd });
+        await dispatch({ type: 'ADD_PRODUCT', payload: newProd });
       } else {
-        const p = state.products.find((prod) => prod.id === it.productId) || it.rawProduct;
-        if (p) {
-          const currentOffice = Number(p.stockOffice || 0);
-          const currentKookkai = Number(p.stockKookkai || 0);
-          const currentBig = Number(p.stockBig || 0);
-
-          let newOffice = currentOffice;
-          let newKookkai = currentKookkai;
-          let newBig = currentBig;
-
-          if (it.location === 'ออฟฟิศ') newOffice += it.quantity;
-          else if (it.location === 'โกดังกุ๊กไก่') newKookkai += it.quantity;
-          else newBig += it.quantity;
-
-          const updatedProd = {
-            ...p,
-            stockOffice: newOffice,
-            stockKookkai: newKookkai,
-            stockBig: newBig,
-            stock: newOffice + newKookkai + newBig,
-            costPrice: it.updateMasterCost && it.costPrice > 0 ? it.costPrice : p.costPrice,
-            cost: it.updateMasterCost && it.costPrice > 0 ? it.costPrice : p.cost,
-          };
-
-          dispatch({ type: 'UPDATE_PRODUCT', payload: updatedProd });
-        }
+        const extraFields =
+          it.updateMasterCost && Number(it.costPrice) > 0
+            ? { cost_price: Number(it.costPrice) }
+            : {};
+        await dispatch({
+          type: 'SET_STOCK',
+          payload: {
+            id: it.productId,
+            delta: Number(it.quantity || 0),
+            location: it.location,
+            extraFields,
+          },
+        });
       }
-    });
+    }
 
     // 2. Build Voucher Record and Save
     const voucherRecord = {

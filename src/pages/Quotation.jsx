@@ -3,6 +3,7 @@ import { useStore } from '../data/store';
 import logoImg from '../assets/logo.png';
 import './Quotation.css';
 import { showAlert, showConfirm } from '../utils/alerts';
+import { fetchNextDocumentId, getThaiYearMonth } from '../utils/concurrency';
 
 // ── Thai Baht Text Conversion ───────────────────────────────────
 const bahtText = (num) => {
@@ -160,6 +161,7 @@ const Quotation = () => {
 
   // Preview state
   const [previewQuotation, setPreviewQuotation] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Generate Quotation Number
   const generateQuotationNo = (dateStr) => {
@@ -169,26 +171,25 @@ const Quotation = () => {
     const prefix = `QT${yy}${mm}-`;
     
     // Find matching items from this month in database state
-    const matchPrefix = quotations.filter(q => q.id.startsWith(prefix));
+    const matchPrefix = quotations.filter(q => q.id && q.id.startsWith(prefix));
     let dbMax = 0;
     if (matchPrefix.length > 0) {
-      const numbers = matchPrefix.map(q => parseInt(q.id.replace(prefix, ''), 10)).filter(n => !isNaN(n));
+      const numbers = matchPrefix.map(q => {
+        const suffix = q.id.slice(prefix.length);
+        if (!/^\d+$/.test(suffix) || suffix.length > 5) return NaN;
+        return parseInt(suffix, 10);
+      }).filter(n => !isNaN(n));
       if (numbers.length > 0) {
         dbMax = Math.max(...numbers);
       }
     }
 
-    // Get the last sequence number generated on this browser
-    const storageKey = `last_quotation_seq_${yy}${mm}`;
-    const localMax = parseInt(localStorage.getItem(storageKey), 10) || 0;
-
-    // Use the higher one and add 1
-    const nextNum = Math.max(dbMax, localMax) + 1;
+    const nextNum = dbMax + 1;
     return `${prefix}${String(nextNum).padStart(3, '0')}`;
   };
 
   // Trigger form setup on creating new
-  const startNewQuotation = () => {
+  const startNewQuotation = async () => {
     const today = new Date().toISOString().split('T')[0];
     setEditId(null);
     setQuotationDate(today);
@@ -210,7 +211,28 @@ const Quotation = () => {
     setVatType('inclusive');
     setItems([]);
     setActiveTab('create');
+
+    // Sync live quotation number from Supabase across all machines
+    try {
+      const prefix = `QT${getThaiYearMonth(today)}-`;
+      const liveNo = await fetchNextDocumentId({
+        table: 'quotations',
+        prefix,
+        pad: 3,
+        localFallbackList: quotations,
+      });
+      setQuotationNo(liveNo);
+    } catch (e) {
+      // Fallback already set
+    }
   };
+
+  // Keep quotation number automatically synced when Realtime updates arrive while creating a new quotation
+  useEffect(() => {
+    if (activeTab === 'create' && !editId && quotationDate) {
+      setQuotationNo(generateQuotationNo(quotationDate));
+    }
+  }, [quotations, activeTab, editId, quotationDate]);
 
   // Customer Search Modal states
   const [showCustomerSearchModal, setShowCustomerSearchModal] = useState(false);
@@ -367,6 +389,7 @@ const Quotation = () => {
   // Save Quotation Handler
   const handleSaveQuotation = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     if (!customerName.trim()) {
       showAlert('กรุณากรอกชื่อลูกค้าหรือชื่อบริษัท', '', 'warning');
       return;
@@ -386,97 +409,107 @@ const Quotation = () => {
       return;
     }
 
-    const { subtotal, tax, total } = totals;
-    
-    // Determine customer ID (create new customer if not exists)
-    let finalCustId = selectedCustId || null;
-    const exists = (state.customers || []).some(
-      c => c.name.toLowerCase().trim() === customerName.toLowerCase().trim()
-    );
-
-    if (customerName.trim() && !exists) {
-      const prefix = 'XL-';
-      let maxNum = 0;
-      (state.customers || []).forEach((c) => {
-        if (c.id && c.id.toUpperCase().startsWith(prefix)) {
-          const numPartStr = c.id.slice(prefix.length);
-          const numPart = parseInt(numPartStr, 10);
-          if (!isNaN(numPart) && numPart > maxNum) {
-            maxNum = numPart;
-          }
-        }
-      });
-      const newCustId = `${prefix}${String(maxNum + 1).padStart(5, '0')}`;
+    setIsSaving(true);
+    try {
+      const { subtotal, tax, total } = totals;
       
-      const success = await dispatch({
-        type: 'ADD_CUSTOMER',
-        payload: {
+      // Determine customer ID (create new customer if not exists)
+      let finalCustId = selectedCustId || null;
+      const existingCustomer = (state.customers || []).find(
+        c => c.name && c.name.toLowerCase().trim() === customerName.toLowerCase().trim()
+      );
+      if (existingCustomer && !finalCustId) {
+        finalCustId = existingCustomer.id;
+      }
+
+      if (customerName.trim() && !existingCustomer) {
+        const prefix = 'XL-';
+        let maxNum = 0;
+        (state.customers || []).forEach((c) => {
+          if (c.id && c.id.toUpperCase().startsWith(prefix)) {
+            const numPartStr = c.id.slice(prefix.length);
+            const numPart = parseInt(numPartStr, 10);
+            if (!isNaN(numPart) && numPart > maxNum) {
+              maxNum = numPart;
+            }
+          }
+        });
+        const newCustId = `${prefix}${String(maxNum + 1).padStart(5, '0')}`;
+        const newCustPayload = {
           id: newCustId,
           name: customerName.trim(),
           phone: customerPhone.trim() || '-',
           address: customerAddress.trim() || '-',
           taxId: customerTaxId.trim() || '-'
+        };
+        
+        const success = await dispatch({
+          type: 'ADD_CUSTOMER',
+          payload: newCustPayload
+        });
+        if (!success) {
+          return;
         }
-      });
-      if (!success) {
-        // Customer creation failed, error popup already shown by store
-        return;
+        finalCustId = newCustPayload.id;
       }
-      finalCustId = newCustId;
-    }
 
-    const newQuotation = {
-      id: quotationNo.trim() || generateQuotationNo(quotationDate),
-      date: quotationDate,
-      customerType,
-      customerId: finalCustId,
-      customerName: customerName.trim(),
-      customerAddress: customerAddress.trim(),
-      customerPhone: customerPhone.trim(),
-      customerTaxId: customerTaxId.trim(),
-      companyBranch: customerType === 'company' ? companyBranch.trim() : null,
-      validityDays,
-      deliveryDays,
-      paymentTerms,
-      salesperson,
-      discountAmount: Number(discountAmount),
-      shippingCost: Number(shippingCost),
-      installationCost: Number(installationCost),
-      vatType,
-      subtotal,
-      tax,
-      total,
-      items
-    };
+      const newQuotation = {
+        id: quotationNo.trim() || generateQuotationNo(quotationDate),
+        date: quotationDate,
+        customerType,
+        customerId: finalCustId,
+        customerName: customerName.trim(),
+        customerAddress: customerAddress.trim(),
+        customerPhone: customerPhone.trim(),
+        customerTaxId: customerTaxId.trim(),
+        companyBranch: customerType === 'company' ? companyBranch.trim() : null,
+        validityDays,
+        deliveryDays,
+        paymentTerms,
+        salesperson,
+        discountAmount: Number(discountAmount),
+        shippingCost: Number(shippingCost),
+        installationCost: Number(installationCost),
+        vatType,
+        subtotal,
+        tax,
+        total,
+        items
+      };
 
-    let saveSuccess = false;
-    if (editId) {
-      saveSuccess = await dispatch({ type: 'UPDATE_QUOTATION', payload: { ...newQuotation, id: editId } });
-    } else {
-      let finalId = newQuotation.id;
-      let attempt = 0;
-      while (quotations.some(q => q.id === finalId) && attempt < 100) {
-        // Increment the running number suffix
-        const prefix = finalId.slice(0, 9); // e.g. "QT6907-"
-        const suffix = finalId.slice(9);
-        const nextNum = (parseInt(suffix, 10) || 0) + 1;
-        finalId = `${prefix}${String(nextNum).padStart(3, '0')}`;
-        attempt++;
+      let saveSuccess = false;
+      if (editId) {
+        saveSuccess = await dispatch({ type: 'UPDATE_QUOTATION', payload: { ...newQuotation, id: editId } });
+      } else {
+        let finalId = newQuotation.id;
+        let attempt = 0;
+        while (quotations.some(q => q.id === finalId) && attempt < 100) {
+          const dashIdx = finalId.lastIndexOf('-');
+          const prefix = dashIdx !== -1 ? finalId.slice(0, dashIdx + 1) : finalId.slice(0, 7);
+          const suffix = dashIdx !== -1 ? finalId.slice(dashIdx + 1) : finalId.slice(7);
+          const nextNum = (parseInt(suffix, 10) || 0) + 1;
+          finalId = `${prefix}${String(nextNum).padStart(3, '0')}`;
+          attempt++;
+        }
+        newQuotation.id = finalId;
+        saveSuccess = await dispatch({ type: 'ADD_QUOTATION', payload: newQuotation });
       }
-      newQuotation.id = finalId;
-      saveSuccess = await dispatch({ type: 'ADD_QUOTATION', payload: newQuotation });
-    }
 
-    if (saveSuccess) {
-      // Store the sequence number in localStorage to prevent resetting when quotations are deleted/converted
-      const prefix = newQuotation.id.slice(0, 9); // e.g. "QT6907-"
-      const suffix = newQuotation.id.slice(9);
-      const seqNum = parseInt(suffix, 10) || 0;
-      const yyMm = prefix.replace('QT', '').replace('-', ''); // e.g. "6907"
-      localStorage.setItem(`last_quotation_seq_${yyMm}`, String(seqNum));
+      if (saveSuccess) {
+        const dashIdx = newQuotation.id.lastIndexOf('-');
+        if (dashIdx !== -1) {
+          const prefix = newQuotation.id.slice(0, dashIdx + 1);
+          const suffix = newQuotation.id.slice(dashIdx + 1);
+          const seqNum = parseInt(suffix, 10) || 0;
+          const yyMm = prefix.replace('QT', '').replace('-', '');
+          localStorage.setItem(`last_quotation_seq_${yyMm}`, String(seqNum));
+        }
 
-      setEditId(null);
-      setActiveTab('history');
+        setEditId(null);
+        setActiveTab('history');
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 

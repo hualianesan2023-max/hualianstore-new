@@ -4,6 +4,7 @@ import { supabase } from '../data/supabaseClient';
 import logoImg from '../assets/logo.png';
 import './Quotation.css';
 import { showAlert, showConfirm } from '../utils/alerts';
+import { fetchNextDocumentId, insertWithUniqueIdRetry, getThaiYearMonth } from '../utils/concurrency';
 
 // ── Thai Baht Text Conversion ───────────────────────────────────
 const bahtText = (num) => {
@@ -196,7 +197,8 @@ const PartsQuotation = () => {
       const { data, error } = await supabase
         .from('parts')
         .select('*')
-        .order('part_code', { ascending: true });
+        .order('part_code', { ascending: true })
+        .range(0, 9999);
       if (error) throw error;
       setParts(data || []);
     } catch (err) {
@@ -287,6 +289,7 @@ const PartsQuotation = () => {
 
   // Preview state
   const [previewQuotation, setPreviewQuotation] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Customer Search Modal states
   const [showCustomerSearchModal, setShowCustomerSearchModal] = useState(false);
@@ -306,6 +309,7 @@ const PartsQuotation = () => {
     if (matchPrefix.length > 0) {
       const numbers = matchPrefix.map(q => {
         const numPart = q.id.slice(prefix.length);
+        if (!/^\d+$/.test(numPart) || numPart.length > 5) return NaN;
         return parseInt(numPart, 10);
       }).filter(n => !isNaN(n));
       if (numbers.length > 0) {
@@ -313,17 +317,12 @@ const PartsQuotation = () => {
       }
     }
 
-    // Get the last sequence number generated on this browser
-    const storageKey = `last_parts_quotation_seq_${yy}${mm}`;
-    const localMax = parseInt(localStorage.getItem(storageKey), 10) || 0;
-
-    // Use the higher one and add 1
-    const nextNum = Math.max(dbMax, localMax) + 1;
+    const nextNum = dbMax + 1;
     return `${prefix}${String(nextNum).padStart(3, '0')}`;
   };
 
   // Trigger form setup on creating new
-  const startNewQuotation = () => {
+  const startNewQuotation = async () => {
     const today = new Date().toISOString().split('T')[0];
     setEditId(null);
     setQuotationDate(today);
@@ -345,7 +344,26 @@ const PartsQuotation = () => {
     setVatType('inclusive');
     setItems([]);
     setActiveTab('create');
+
+    try {
+      const prefix = `QTS${getThaiYearMonth(today)}-`;
+      const liveNo = await fetchNextDocumentId({
+        table: 'quotations_part',
+        prefix,
+        pad: 3,
+        localFallbackList: quotationsList,
+      });
+      setQuotationNo(liveNo);
+    } catch (e) {
+      // Fallback already set
+    }
   };
+
+  useEffect(() => {
+    if (activeTab === 'create' && !editId && quotationDate) {
+      setQuotationNo(generateQuotationNo(quotationDate));
+    }
+  }, [quotationsList, activeTab, editId, quotationDate]);
 
   // Filtered customers inside modal
   const filteredCustomersInModal = useMemo(() => {
@@ -475,6 +493,7 @@ const PartsQuotation = () => {
   // Save Quotation Handler
   const handleSaveQuotation = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     if (!customerName.trim()) {
       showAlert('กรุณากรอกชื่อลูกค้าหรือชื่อบริษัท', '', 'warning');
       return;
@@ -494,142 +513,154 @@ const PartsQuotation = () => {
       return;
     }
 
-    const { subtotal, tax, total } = totals;
-    
-    // Determine customer ID (create new customer if not exists)
-    let finalCustId = selectedCustId || null;
-    const exists = (state.customers || []).some(
-      c => c.name.toLowerCase().trim() === customerName.toLowerCase().trim()
-    );
-
-    if (customerName.trim() && !exists) {
-      const prefix = 'XL-';
-      let maxNum = 0;
-      (state.customers || []).forEach((c) => {
-        if (c.id && c.id.toUpperCase().startsWith(prefix)) {
-          const numPartStr = c.id.slice(prefix.length);
-          const numPart = parseInt(numPartStr, 10);
-          if (!isNaN(numPart) && numPart > maxNum) {
-            maxNum = numPart;
-          }
-        }
-      });
-      const newCustId = `${prefix}${String(maxNum + 1).padStart(5, '0')}`;
+    setIsSaving(true);
+    try {
+      const { subtotal, tax, total } = totals;
       
-      const success = await dispatch({
-        type: 'ADD_CUSTOMER',
-        payload: {
+      // Determine customer ID (create new customer if not exists)
+      let finalCustId = selectedCustId || null;
+      const existingCustomer = (state.customers || []).find(
+        c => c.name && c.name.toLowerCase().trim() === customerName.toLowerCase().trim()
+      );
+      if (existingCustomer && !finalCustId) {
+        finalCustId = existingCustomer.id;
+      }
+
+      if (customerName.trim() && !existingCustomer) {
+        const prefix = 'XL-';
+        let maxNum = 0;
+        (state.customers || []).forEach((c) => {
+          if (c.id && c.id.toUpperCase().startsWith(prefix)) {
+            const numPartStr = c.id.slice(prefix.length);
+            const numPart = parseInt(numPartStr, 10);
+            if (!isNaN(numPart) && numPart > maxNum) {
+              maxNum = numPart;
+            }
+          }
+        });
+        const newCustId = `${prefix}${String(maxNum + 1).padStart(5, '0')}`;
+        const newCustPayload = {
           id: newCustId,
           name: customerName.trim(),
           phone: customerPhone.trim() || '-',
           address: customerAddress.trim() || '-',
           taxId: customerTaxId.trim() || '-'
+        };
+        
+        const success = await dispatch({
+          type: 'ADD_CUSTOMER',
+          payload: newCustPayload
+        });
+        if (!success) {
+          return;
         }
-      });
-      if (!success) {
-        return;
+        finalCustId = newCustPayload.id;
       }
-      finalCustId = newCustId;
-    }
 
-    const newQuotation = {
-      id: quotationNo.trim() || generateQuotationNo(quotationDate),
-      date: quotationDate,
-      customerType,
-      customerId: finalCustId,
-      customerName: customerName.trim(),
-      customerAddress: customerAddress.trim(),
-      customerPhone: customerPhone.trim(),
-      customerTaxId: customerTaxId.trim(),
-      companyBranch: customerType === 'company' ? companyBranch.trim() : null,
-      validityDays,
-      deliveryDays,
-      paymentTerms,
-      salesperson,
-      discountAmount: Number(discountAmount),
-      shippingCost: Number(shippingCost),
-      installationCost: Number(installationCost),
-      vatType,
-      subtotal,
-      tax,
-      total,
-      items
-    };
+      const initialCandidateId = quotationNo.trim() || generateQuotationNo(quotationDate);
+      const qPrefix = `QTS${getThaiYearMonth(quotationDate)}-`;
 
-    let finalId = quotationNo.trim() || generateQuotationNo(quotationDate);
-    if (!editId) {
-      let attempt = 0;
-      while (quotationsList.some(q => q.id === finalId) && attempt < 100) {
-        const dashIdx = finalId.lastIndexOf('-');
-        const prefix = finalId.slice(0, dashIdx + 1);
-        const suffix = finalId.slice(dashIdx + 1);
-        const nextNum = (parseInt(suffix, 10) || 0) + 1;
-        finalId = `${prefix}${String(nextNum).padStart(3, '0')}`;
-        attempt++;
-      }
-    }
-
-    const quotationPayload = {
-      id: editId || finalId,
-      date: quotationDate,
-      customer_type: customerType,
-      customer_id: finalCustId,
-      customer_name: customerName.trim(),
-      customer_phone: customerPhone.trim() || null,
-      customer_address: customerAddress.trim() || null,
-      customer_tax_id: customerTaxId.trim() || null,
-      company_branch: customerType === 'company' ? companyBranch.trim() : null,
-      validity_days: validityDays || '30 วัน',
-      delivery_days: deliveryDays || '7 วัน',
-      payment_terms: paymentTerms || 'โอนเงินเข้าบัญชี',
-      salesperson: salesperson || null,
-      discount_amount: Number(discountAmount || 0),
-      shipping_cost: Number(shippingCost || 0),
-      installation_cost: Number(installationCost || 0),
-      vat_type: vatType || 'inclusive',
-      subtotal: subtotal,
-      tax: tax,
-      total: total
-    };
-
-    const itemsPayload = items.map(item => ({
-      quotation_id: quotationPayload.id,
-      product_id: item.productId,
-      product_name: item.name,
-      quantity: Number(item.quantity || 1),
-      sell_price: Number(item.sellPrice || 0),
-      unit: item.unit || 'ชิ้น'
-    }));
-
-    try {
+      let savedId = editId || initialCandidateId;
       if (editId) {
+        const quotationPayload = {
+          id: editId,
+          date: quotationDate,
+          customer_type: customerType,
+          customer_id: finalCustId,
+          customer_name: customerName.trim(),
+          customer_phone: customerPhone.trim() || null,
+          customer_address: customerAddress.trim() || null,
+          customer_tax_id: customerTaxId.trim() || null,
+          company_branch: customerType === 'company' ? companyBranch.trim() : null,
+          validity_days: validityDays || '30 วัน',
+          delivery_days: deliveryDays || '7 วัน',
+          payment_terms: paymentTerms || 'โอนเงินเข้าบัญชี',
+          salesperson: salesperson || null,
+          discount_amount: Number(discountAmount || 0),
+          shipping_cost: Number(shippingCost || 0),
+          installation_cost: Number(installationCost || 0),
+          vat_type: vatType || 'inclusive',
+          subtotal: subtotal,
+          tax: tax,
+          total: total
+        };
         const { error: qErr } = await supabase.from('quotations_part').update(quotationPayload).eq('id', editId);
         if (qErr) throw qErr;
         await supabase.from('quotation_items_part').delete().eq('quotation_id', editId);
+        const itemsPayload = items.map(item => ({
+          quotation_id: editId,
+          product_id: item.productId,
+          product_name: item.name,
+          quantity: Number(item.quantity || 1),
+          sell_price: Number(item.sellPrice || 0),
+          unit: item.unit || 'ชิ้น'
+        }));
         const { error: itErr } = await supabase.from('quotation_items_part').insert(itemsPayload);
         if (itErr) throw itErr;
       } else {
-        const { error: qErr } = await supabase.from('quotations_part').insert(quotationPayload);
+        const { finalId, error: qErr } = await insertWithUniqueIdRetry({
+          table: 'quotations_part',
+          prefix: qPrefix,
+          pad: 3,
+          initialId: initialCandidateId,
+          localFallbackList: quotationsList,
+          buildRow: (id) => ({
+            id,
+            date: quotationDate,
+            customer_type: customerType,
+            customer_id: finalCustId,
+            customer_name: customerName.trim(),
+            customer_phone: customerPhone.trim() || null,
+            customer_address: customerAddress.trim() || null,
+            customer_tax_id: customerTaxId.trim() || null,
+            company_branch: customerType === 'company' ? companyBranch.trim() : null,
+            validity_days: validityDays || '30 วัน',
+            delivery_days: deliveryDays || '7 วัน',
+            payment_terms: paymentTerms || 'โอนเงินเข้าบัญชี',
+            salesperson: salesperson || null,
+            discount_amount: Number(discountAmount || 0),
+            shipping_cost: Number(shippingCost || 0),
+            installation_cost: Number(installationCost || 0),
+            vat_type: vatType || 'inclusive',
+            subtotal: subtotal,
+            tax: tax,
+            total: total
+          }),
+        });
         if (qErr) throw qErr;
+        savedId = finalId;
+
+        const itemsPayload = items.map(item => ({
+          quotation_id: savedId,
+          product_id: item.productId,
+          product_name: item.name,
+          quantity: Number(item.quantity || 1),
+          sell_price: Number(item.sellPrice || 0),
+          unit: item.unit || 'ชิ้น'
+        }));
         const { error: itErr } = await supabase.from('quotation_items_part').insert(itemsPayload);
         if (itErr) throw itErr;
       }
 
       // Store sequence number in localStorage
-      const dashIdx = quotationPayload.id.lastIndexOf('-');
-      const prefix = quotationPayload.id.slice(0, dashIdx + 1);
-      const suffix = quotationPayload.id.slice(dashIdx + 1);
-      const seqNum = parseInt(suffix, 10) || 0;
-      const yyMm = prefix.replace('QTS', '').replace('-', '');
-      localStorage.setItem(`last_parts_quotation_seq_${yyMm}`, String(seqNum));
+      const dashIdx = savedId.lastIndexOf('-');
+      if (dashIdx !== -1) {
+        const prefix = savedId.slice(0, dashIdx + 1);
+        const suffix = savedId.slice(dashIdx + 1);
+        const seqNum = parseInt(suffix, 10) || 0;
+        const yyMm = prefix.replace('QTS', '').replace('-', '');
+        localStorage.setItem(`last_parts_quotation_seq_${yyMm}`, String(seqNum));
+      }
 
       await fetchQuotations();
       setEditId(null);
       setActiveTab('history');
-      showAlert('บันทึกใบเสนอราคาอะไหล่สำเร็จ', `เลขที่ ${quotationPayload.id}`, 'success');
+      showAlert('บันทึกใบเสนอราคาอะไหล่สำเร็จ', `เลขที่ ${savedId}`, 'success');
     } catch (err) {
       console.error('Error saving parts quotation:', err);
       showAlert('เกิดข้อผิดพลาดในการบันทึก', err.message, 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1108,9 +1139,9 @@ const PartsQuotation = () => {
                               type="button"
                               className="btn-price-select branch"
                               onClick={() => addItemToQuotation(part, 'dealerPrice')}
-                              title="เพิ่มด้วย ราคาสาขา"
+                              title="เพิ่มด้วย ราคาตัวแทน"
                             >
-                              สาขา: ฿{formatCurrency(part.dealer_price)}
+                              ตัวแทน: ฿{formatCurrency(part.dealer_price)}
                             </button>
                           </div>
                         </div>

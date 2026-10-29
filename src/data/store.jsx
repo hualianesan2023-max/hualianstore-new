@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from './supabaseClient';
 import Swal from 'sweetalert2';
+import {
+  insertWithUniqueIdRetry,
+  adjustProductStockAtomic,
+  getThaiYearMonth,
+} from '../utils/concurrency';
 
 // Round to 3 decimals (supports fractional stock like 0.5 kg without float drift)
 const r3 = (n) => Math.round(Number(n || 0) * 1000) / 1000;
@@ -157,7 +162,7 @@ function storeReducer(state, action) {
 
     case 'SET_STOCK':
     case ACTIONS.UPDATE_STOCK: {
-      const { id, stock, location } = action.payload;
+      const { id, stock, delta, location, extraFields } = action.payload;
       return {
         ...state,
         products: state.products.map((p) => {
@@ -165,20 +170,29 @@ function storeReducer(state, action) {
           let stockOffice = Number(p.stockOffice || 0);
           let stockKookkai = Number(p.stockKookkai || 0);
           let stockBig = Number(p.stockBig || 0);
+          const applyChange = (cur) =>
+            delta !== undefined
+              ? r3(Math.max(0, cur + Number(delta || 0)))
+              : r3(Math.max(0, Number(stock || 0)));
           if (location === 'โกดังกุ๊กไก่') {
-            stockKookkai = Math.max(0, Number(stock || 0));
+            stockKookkai = applyChange(stockKookkai);
           } else if (location === 'ออฟฟิศ') {
-            stockOffice = Math.max(0, Number(stock || 0));
+            stockOffice = applyChange(stockOffice);
           } else {
-            stockBig = Math.max(0, Number(stock || 0));
+            stockBig = applyChange(stockBig);
           }
-          const totalStock = stockOffice + stockKookkai + stockBig;
+          const totalStock = r3(stockOffice + stockKookkai + stockBig);
+          const costPatch =
+            extraFields && extraFields.cost_price !== undefined
+              ? { costPrice: Number(extraFields.cost_price), cost: Number(extraFields.cost_price) }
+              : {};
           return {
             ...p,
             stockOffice,
             stockKookkai,
             stockBig,
             stock: totalStock,
+            ...costPatch,
           };
         }),
       };
@@ -196,6 +210,9 @@ function storeReducer(state, action) {
         );
       } else {
         newSales = [action.payload, ...state.sales];
+      }
+      if (action.skipStockDeduct) {
+        return { ...state, sales: newSales };
       }
       // Deduct sold quantities from local product stock
       const saleItems = action.payload.items || [];
@@ -234,6 +251,12 @@ function storeReducer(state, action) {
 
     case ACTIONS.DELETE_SALE: {
       const saleId = typeof action.payload === 'object' ? action.payload.id : action.payload;
+      if (action.skipStockRestore) {
+        return {
+          ...state,
+          sales: state.sales.filter((s) => s.id !== saleId),
+        };
+      }
       const saleToDelete = state.sales.find((s) => s.id === saleId);
       const saleItems = (typeof action.payload === 'object' && action.payload.items) 
         ? action.payload.items 
@@ -1220,7 +1243,7 @@ export function StoreProvider({ children }) {
                 customerPhone: r.customer_phone || '',
                 customerAddress: r.customer_address || '',
                 province: r.province || null,
-                machineModel: r.machineModel,
+                machineModel: r.machine_model || r.machineModel,
                 symptoms: r.symptoms || '',
                 technician: r.technician || '',
                 status: r.status || 'รอนัดวัน',
@@ -1289,6 +1312,39 @@ export function StoreProvider({ children }) {
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'customers' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new;
+            dispatch({
+              type: ACTIONS.ADD_CUSTOMER,
+              payload: {
+                id: row.id,
+                name: row.name,
+                phone: row.phone || '-',
+                address: row.address || '-',
+                taxId: row.tax_id || '-',
+              }
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const row = payload.new;
+            dispatch({
+              type: ACTIONS.UPDATE_CUSTOMER,
+              payload: {
+                id: row.id,
+                name: row.name,
+                phone: row.phone || '-',
+                address: row.address || '-',
+                taxId: row.tax_id || '-',
+              }
+            });
+          } else if (payload.eventType === 'DELETE') {
+            dispatch({ type: ACTIONS.DELETE_CUSTOMER, payload: payload.old.id });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'promotions' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
@@ -1330,25 +1386,86 @@ export function StoreProvider({ children }) {
         (payload) => {
           if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
             const row = payload.new;
-            dispatch({
-              type: ACTIONS.UPDATE_STORE_INFO,
-              payload: {
-                name: row.name,
-                address: row.address,
-                phone: row.phone,
-                taxId: row.tax_id,
-                taxRate: Number(row.tax_rate || 7)
-              }
-            });
+            if (row && row.id === 'main') {
+              dispatch({
+                type: ACTIONS.UPDATE_STORE_INFO,
+                payload: {
+                  name: row.name,
+                  address: row.address,
+                  phone: row.phone,
+                  taxId: row.tax_id,
+                  taxRate: Number(row.tax_rate || 7)
+                }
+              });
+            }
           }
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sales' },
-        (payload) => {
+        async (payload) => {
           if (payload.eventType === 'DELETE') {
-            dispatch({ type: ACTIONS.DELETE_SALE, payload: payload.old.id });
+            dispatch({ type: ACTIONS.DELETE_SALE, payload: payload.old.id, skipStockRestore: true });
+          } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            try {
+              const saleRow = payload.new;
+              // Brief delay on INSERT so sale_items rows from the other terminal finish inserting
+              if (payload.eventType === 'INSERT') {
+                await new Promise((r) => setTimeout(r, 300));
+              }
+              const { data: dbItems } = await supabase
+                .from('sale_items')
+                .select('*')
+                .eq('sale_id', saleRow.id);
+              const mappedItems = (dbItems || []).map((item) => ({
+                id: item.product_id,
+                productId: item.product_id,
+                name: item.product_name,
+                sellPrice: Number(item.sell_price || 0),
+                costPrice: Number(item.cost_price || 0),
+                quantity: Number(item.quantity || 0),
+                selectedLocation: item.selected_location,
+              }));
+              const saleObj = {
+                id: saleRow.id,
+                date: saleRow.date,
+                customer: saleRow.customer_id
+                  ? {
+                      id: saleRow.customer_id,
+                      name: saleRow.customer_name,
+                      phone: saleRow.customer_phone,
+                      address: saleRow.customer_address,
+                      taxId: saleRow.customer_tax_id,
+                    }
+                  : {
+                      name: saleRow.customer_name,
+                      phone: saleRow.customer_phone,
+                      address: saleRow.customer_address,
+                      taxId: saleRow.customer_tax_id,
+                    },
+                employee: saleRow.salesperson,
+                paymentMethod: saleRow.payment_method,
+                discountCode: saleRow.discount_code,
+                discountAmount: Number(saleRow.discount_amount || 0),
+                subtotal: Number(saleRow.subtotal || 0),
+                tax: Number(saleRow.tax || 0),
+                shippingCost: Number(saleRow.shipping_cost || 0),
+                total: Number(saleRow.total || 0),
+                cashReceived: Number(saleRow.cash_received || 0),
+                change: Number(saleRow.change || 0),
+                applyVat: !!saleRow.apply_vat,
+                isVatInclusive: !!saleRow.is_vat_inclusive,
+                items: mappedItems,
+              };
+              if (payload.eventType === 'INSERT') {
+                dispatch({ type: ACTIONS.ADD_SALE, payload: saleObj, skipStockDeduct: true });
+              } else {
+                dispatch({ type: ACTIONS.UPDATE_SALE, payload: saleObj });
+              }
+            } catch (err) {
+              console.error('Realtime sales sync error:', err);
+            }
           }
         }
       )
@@ -1423,24 +1540,60 @@ export function StoreProvider({ children }) {
       // 2. Persist to Supabase Database
       if (action.type === ACTIONS.ADD_PRODUCT) {
         const p = action.payload;
-        const { error } = await supabase.from('products').insert({
-          id: p.id,
-          barcode: p.barcode || p.id,
-          name: p.name,
-          category_id: p.category,
-          cost_price: Number(p.costPrice || 0),
-          branch_price: Number(p.branchPrice || p.sellPrice || 0),
-          sell_price: Number(p.sellPrice || 0),
-          stock_office: Number(p.stockOffice || 0),
-          stock_kookkai: Number(p.stockKookkai || 0),
-          stock_big: Number(p.stockBig || 0),
-          min_stock: Number(p.minStock || 10),
-          image: p.image || '📦',
-          unit: p.unit || 'เครื่อง',
-          is_popular: !!p.isPopular
-        });
-        success = !error;
-        if (error) console.error('Add product error:', error);
+        const originalId = p.id;
+        const prefixMatch = String(p.id || '').match(/^([A-Za-z]+-)(\d+)$/);
+        if (prefixMatch) {
+          const { success: insOk, id: finalId, error } = await insertWithUniqueIdRetry({
+            table: 'products',
+            prefix: prefixMatch[1].toUpperCase(),
+            pad: Math.max(3, prefixMatch[2].length),
+            column: 'id',
+            initialId: p.id,
+            buildRow: (candidateId) => ({
+              id: candidateId,
+              barcode: candidateId,
+              name: p.name,
+              category_id: p.category,
+              cost_price: Number(p.costPrice || 0),
+              branch_price: Number(p.branchPrice || p.sellPrice || 0),
+              sell_price: Number(p.sellPrice || 0),
+              stock_office: Number(p.stockOffice || 0),
+              stock_kookkai: Number(p.stockKookkai || 0),
+              stock_big: Number(p.stockBig || 0),
+              min_stock: Number(p.minStock || 10),
+              image: p.image || '📦',
+              unit: p.unit || 'เครื่อง',
+              is_popular: !!p.isPopular,
+            }),
+          });
+          success = insOk;
+          if (insOk && finalId && finalId !== originalId) {
+            p.id = finalId;
+            p.barcode = finalId;
+            dispatch({ type: ACTIONS.DELETE_PRODUCT, payload: originalId });
+            dispatch({ type: ACTIONS.ADD_PRODUCT, payload: { ...p, id: finalId, barcode: finalId } });
+          }
+          if (error) console.error('Add product error:', error);
+        } else {
+          const { error } = await supabase.from('products').insert({
+            id: p.id,
+            barcode: p.barcode || p.id,
+            name: p.name,
+            category_id: p.category,
+            cost_price: Number(p.costPrice || 0),
+            branch_price: Number(p.branchPrice || p.sellPrice || 0),
+            sell_price: Number(p.sellPrice || 0),
+            stock_office: Number(p.stockOffice || 0),
+            stock_kookkai: Number(p.stockKookkai || 0),
+            stock_big: Number(p.stockBig || 0),
+            min_stock: Number(p.minStock || 10),
+            image: p.image || '📦',
+            unit: p.unit || 'เครื่อง',
+            is_popular: !!p.isPopular
+          });
+          success = !error;
+          if (error) console.error('Add product error:', error);
+        }
       } 
       else if (action.type === ACTIONS.UPDATE_PRODUCT) {
         const p = action.payload;
@@ -1468,97 +1621,104 @@ export function StoreProvider({ children }) {
         if (error) console.error('Delete product error:', error);
       } 
       else if (action.type === 'SET_STOCK' || action.type === ACTIONS.UPDATE_STOCK) {
-        const { id, stock, location } = action.payload;
-        let updateFields = {};
-        if (location === 'โกดังกุ๊กไก่') {
-          updateFields = { stock_kookkai: Number(stock || 0) };
-        } else if (location === 'ออฟฟิศ') {
-          updateFields = { stock_office: Number(stock || 0) };
+        const { id, stock, delta, location, extraFields } = action.payload;
+        if (delta !== undefined) {
+          const { success: casOk, error } = await adjustProductStockAtomic({
+            productId: id,
+            location,
+            delta: Number(delta),
+            extraFields: extraFields || {},
+          });
+          success = casOk;
+          if (error) console.error('Atomic update stock error:', error);
         } else {
-          updateFields = { stock_big: Number(stock || 0) };
+          let updateFields = { ...(extraFields || {}) };
+          if (location === 'โกดังกุ๊กไก่') {
+            updateFields.stock_kookkai = r3(Number(stock || 0));
+          } else if (location === 'ออฟฟิศ') {
+            updateFields.stock_office = r3(Number(stock || 0));
+          } else {
+            updateFields.stock_big = r3(Number(stock || 0));
+          }
+          const { error } = await supabase.from('products').update(updateFields).eq('id', id);
+          success = !error;
+          if (error) console.error('Update stock error:', error);
         }
-        const { error } = await supabase.from('products').update(updateFields).eq('id', id);
-        success = !error;
-        if (error) console.error('Update stock error:', error);
       }
       else if (action.type === ACTIONS.ADD_SALE) {
         const s = action.payload;
+        const originalSaleId = s.id;
         const customerId = s.customer?.id || null;
         const customerName = s.customer?.name || 'ลูกค้าทั่วไป';
         const customerPhone = s.customer?.phone || '-';
         const customerAddress = s.customer?.address || '-';
         const customerTaxId = s.customer?.taxId || '-';
+        const { yymm } = getThaiYearMonth(s.date);
+        const salePrefix = `IV${yymm}-`;
 
-        // 1. Insert into sales
-        const { error: saleErr } = await supabase.from('sales').insert({
-          id: s.id,
-          date: s.date || new Date().toISOString(),
-          customer_id: customerId,
-          customer_name: customerName,
-          customer_phone: customerPhone,
-          customer_address: customerAddress,
-          customer_tax_id: customerTaxId,
-          salesperson: s.employee || 'หน้าร้าน',
-          payment_method: s.paymentMethod,
-          discount_code: s.discountCode || null,
-          discount_amount: Number(s.discountAmount || 0),
-          subtotal: Number(s.subtotal),
-          tax: Number(s.tax || 0),
-          shipping_cost: Number(s.shippingCost || 0),
-          total: Number(s.total),
-          cash_received: Number(s.cashReceived || 0),
-          change: Number(s.change || 0),
-          apply_vat: !!s.applyVat,
-          is_vat_inclusive: !!s.isVatInclusive
+        // 1. Insert into sales with automatic collision retry across 7-8 terminals
+        const {
+          success: saleInsOk,
+          id: finalSaleId,
+          error: saleErr,
+        } = await insertWithUniqueIdRetry({
+          table: 'sales',
+          prefix: salePrefix,
+          pad: 3,
+          column: 'id',
+          initialId: s.id,
+          buildRow: (candidateId) => ({
+            id: candidateId,
+            date: s.date || new Date().toISOString(),
+            customer_id: customerId,
+            customer_name: customerName,
+            customer_phone: customerPhone,
+            customer_address: customerAddress,
+            customer_tax_id: customerTaxId,
+            salesperson: s.employee || 'หน้าร้าน',
+            payment_method: s.paymentMethod,
+            discount_code: s.discountCode || null,
+            discount_amount: Number(s.discountAmount || 0),
+            subtotal: Number(s.subtotal),
+            tax: Number(s.tax || 0),
+            shipping_cost: Number(s.shippingCost || 0),
+            total: Number(s.total),
+            cash_received: Number(s.cashReceived || 0),
+            change: Number(s.change || 0),
+            apply_vat: !!s.applyVat,
+            is_vat_inclusive: !!s.isVatInclusive,
+          }),
         });
 
-        if (saleErr) {
+        if (!saleInsOk || saleErr) {
           console.error('Insert sale error:', saleErr);
           success = false;
         } else {
-          // 2. Loop items
+          if (finalSaleId && finalSaleId !== originalSaleId) {
+            s.id = finalSaleId;
+            dispatch({ type: ACTIONS.DELETE_SALE, payload: originalSaleId, skipStockRestore: true });
+            dispatch({ type: ACTIONS.ADD_SALE, payload: { ...s, id: finalSaleId }, skipStockDeduct: true });
+          }
+
+          // 2. Loop items: deduct stock atomically via Compare-And-Swap + insert sale_items
           for (const item of s.items) {
-            // Fetch product to check stock
-            const { data: product, error: getProdErr } = await supabase
-              .from('products')
-              .select('*')
-              .eq('id', item.productId)
-              .single();
-
-            if (getProdErr || !product) {
-              console.error('Fetch product error:', getProdErr);
-              success = false;
-              break;
-            }
-
             const loc = item.selectedLocation;
             const qty = Number(item.quantity);
 
-            // Determine stock column to update
-            let updateFields = {};
-            if (loc === 'โกดังกุ๊กไก่') {
-              updateFields = { stock_kookkai: r3(Math.max(0, Number(product.stock_kookkai || 0) - qty)) };
-            } else if (loc === 'ออฟฟิศ') {
-              updateFields = { stock_office: r3(Math.max(0, Number(product.stock_office || 0) - qty)) };
-            } else {
-              updateFields = { stock_big: r3(Math.max(0, Number(product.stock_big || 0) - qty)) };
+            if (item.productId) {
+              const { success: stockOk, error: updateStockErr } = await adjustProductStockAtomic({
+                productId: item.productId,
+                location: loc,
+                delta: -qty,
+              });
+              if (!stockOk || updateStockErr) {
+                console.error('Atomic deduct stock error:', updateStockErr);
+              }
             }
 
-            // Update stock
-            const { error: updateStockErr } = await supabase
-              .from('products')
-              .update(updateFields)
-              .eq('id', item.productId);
-
-            if (updateStockErr) {
-              console.error('Update stock error:', updateStockErr);
-              success = false;
-              break;
-            }
-
-            // Insert sale item
+            // Insert sale item with guaranteed unique finalSaleId
             const { error: itemErr } = await supabase.from('sale_items').insert({
-              sale_id: s.id,
+              sale_id: finalSaleId,
               product_id: item.productId,
               product_name: item.name,
               quantity: qty,
@@ -1625,23 +1785,18 @@ export function StoreProvider({ children }) {
           }));
         }
 
-        // 2. Restore stock in Supabase for each item
+        // 2. Restore stock atomically in Supabase for each item
         for (const item of itemsToRestore) {
           const prodId = item.productId || item.id;
           const qty = Number(item.quantity || 0);
           const loc = item.selectedLocation || item.location;
 
-          const { data: prod, error: fetchErr } = await supabase.from('products').select('*').eq('id', prodId).single();
-          if (!fetchErr && prod) {
-            let updateFields = {};
-            if (loc === 'โกดังกุ๊กไก่') {
-              updateFields = { stock_kookkai: r3(Number(prod.stock_kookkai || 0) + qty) };
-            } else if (loc === 'ออฟฟิศ') {
-              updateFields = { stock_office: r3(Number(prod.stock_office || 0) + qty) };
-            } else {
-              updateFields = { stock_big: r3(Number(prod.stock_big || 0) + qty) };
-            }
-            const { error: stockErr } = await supabase.from('products').update(updateFields).eq('id', prodId);
+          if (prodId && qty > 0) {
+            const { error: stockErr } = await adjustProductStockAtomic({
+              productId: prodId,
+              location: loc,
+              delta: +qty,
+            });
             if (stockErr) console.error('Restore stock error:', stockErr);
           }
         }
@@ -1663,14 +1818,31 @@ export function StoreProvider({ children }) {
       }
       else if (action.type === ACTIONS.ADD_CUSTOMER) {
         const c = action.payload;
-        const { error } = await supabase.from('customers').insert({
-          id: c.id,
-          name: c.name,
-          phone: c.phone || '',
-          address: c.address || '',
-          tax_id: c.taxId || ''
+        const originalCustId = c.id;
+        const {
+          success: custOk,
+          id: finalCustId,
+          error,
+        } = await insertWithUniqueIdRetry({
+          table: 'customers',
+          prefix: 'XL-',
+          pad: 5,
+          column: 'id',
+          initialId: c.id,
+          buildRow: (candidateId) => ({
+            id: candidateId,
+            name: c.name,
+            phone: c.phone || '',
+            address: c.address || '',
+            tax_id: c.taxId || '',
+          }),
         });
-        success = !error;
+        success = custOk;
+        if (custOk && finalCustId && finalCustId !== originalCustId) {
+          c.id = finalCustId;
+          dispatch({ type: ACTIONS.DELETE_CUSTOMER, payload: originalCustId });
+          dispatch({ type: ACTIONS.ADD_CUSTOMER, payload: { ...c, id: finalCustId } });
+        }
         if (error) {
           console.error('Add customer error:', error);
           Swal.fire({
@@ -1869,42 +2041,62 @@ export function StoreProvider({ children }) {
       }
       else if (action.type === ACTIONS.ADD_QUOTATION) {
         const q = action.payload;
-        const { error: quotErr } = await supabase.from('quotations').insert({
-          id: q.id,
-          date: q.date,
-          customer_type: q.customerType || 'general',
-          customer_id: q.customerId || null,
-          customer_name: q.customerName,
-          customer_phone: q.customerPhone || null,
-          customer_address: q.customerAddress || null,
-          customer_tax_id: q.customerTaxId || null,
-          company_branch: q.companyBranch || null,
-          validity_days: q.validityDays || null,
-          delivery_days: q.deliveryDays || null,
-          payment_terms: q.paymentTerms || null,
-          salesperson: q.salesperson || null,
-          discount_amount: Number(q.discountAmount || 0),
-          shipping_cost: Number(q.shippingCost || 0),
-          installation_cost: Number(q.installationCost || 0),
-          vat_type: q.vatType || 'inclusive',
-          subtotal: Number(q.subtotal || 0),
-          tax: Number(q.tax || 0),
-          total: Number(q.total || 0)
+        const originalQId = q.id;
+        const { yymm } = getThaiYearMonth(q.date);
+        const quotPrefix = `QT${yymm}-`;
+
+        const {
+          success: quotOk,
+          id: finalQId,
+          error: quotErr,
+        } = await insertWithUniqueIdRetry({
+          table: 'quotations',
+          prefix: quotPrefix,
+          pad: 3,
+          column: 'id',
+          initialId: q.id,
+          buildRow: (candidateId) => ({
+            id: candidateId,
+            date: q.date,
+            customer_type: q.customerType || 'general',
+            customer_id: q.customerId || null,
+            customer_name: q.customerName,
+            customer_phone: q.customerPhone || null,
+            customer_address: q.customerAddress || null,
+            customer_tax_id: q.customerTaxId || null,
+            company_branch: q.companyBranch || null,
+            validity_days: q.validityDays || null,
+            delivery_days: q.deliveryDays || null,
+            payment_terms: q.paymentTerms || null,
+            salesperson: q.salesperson || null,
+            discount_amount: Number(q.discountAmount || 0),
+            shipping_cost: Number(q.shippingCost || 0),
+            installation_cost: Number(q.installationCost || 0),
+            vat_type: q.vatType || 'inclusive',
+            subtotal: Number(q.subtotal || 0),
+            tax: Number(q.tax || 0),
+            total: Number(q.total || 0),
+          }),
         });
 
-        if (quotErr) {
+        if (!quotOk || quotErr) {
           console.error('Add quotation error:', quotErr);
           Swal.fire({
             title: 'เกิดข้อผิดพลาดในการบันทึกใบเสนอราคา',
-            text: 'กรุณาอัปเดตตารางฐานข้อมูลใน Supabase: ' + (quotErr.message || JSON.stringify(quotErr)),
+            text: 'กรุณาอัปเดตตารางฐานข้อมูลใน Supabase: ' + (quotErr?.message || JSON.stringify(quotErr)),
             icon: 'error',
             confirmButtonText: 'ตกลง'
           });
           success = false;
         } else {
+          if (finalQId && finalQId !== originalQId) {
+            q.id = finalQId;
+            dispatch({ type: ACTIONS.DELETE_QUOTATION, payload: originalQId });
+            dispatch({ type: ACTIONS.ADD_QUOTATION, payload: { ...q, id: finalQId } });
+          }
           for (const item of q.items || []) {
             const { error: itemErr } = await supabase.from('quotation_items').insert({
-              quotation_id: q.id,
+              quotation_id: finalQId,
               product_id: item.productId,
               product_name: item.name,
               quantity: Number(item.quantity || 1),
@@ -1993,23 +2185,41 @@ export function StoreProvider({ children }) {
       // ── Customer Repair CRUD ──────────────────────────────────
       else if (action.type === ACTIONS.ADD_CUSTOMER_REPAIR) {
         const r = action.payload;
-        const { error } = await supabase.from('customer_repairs').insert({
-          id: r.id,
-          date: r.date,
-          customer_name: r.customerName,
-          customer_phone: r.customerPhone || null,
-          customer_address: r.customerAddress || null,
-          province: r.province || null,
-          location_url: r.locationUrl || null,
-          appointment_date: r.appointmentDate || null,
-          machine_model: r.machineModel,
-          symptoms: r.symptoms || null,
-          technician: r.technician || null,
-          status: r.status || 'รอนัดวัน',
-          estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
-          actual_cost: r.actualCost ? Number(r.actualCost) : null,
-          notes: r.notes || null,
+        const originalId = r.id;
+        const { yymm } = getThaiYearMonth(r.date);
+        const {
+          success: insOk,
+          id: finalId,
+          error,
+        } = await insertWithUniqueIdRetry({
+          table: 'customer_repairs',
+          prefix: `SR${yymm}-`,
+          pad: 3,
+          column: 'id',
+          initialId: r.id,
+          buildRow: (candidateId) => ({
+            id: candidateId,
+            date: r.date,
+            customer_name: r.customerName,
+            customer_phone: r.customerPhone || null,
+            customer_address: r.customerAddress || null,
+            province: r.province || null,
+            location_url: r.locationUrl || null,
+            appointment_date: r.appointmentDate || null,
+            machine_model: r.machineModel,
+            symptoms: r.symptoms || null,
+            technician: r.technician || null,
+            status: r.status || 'รอนัดวัน',
+            estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
+            actual_cost: r.actualCost ? Number(r.actualCost) : null,
+            notes: r.notes || null,
+          }),
         });
+        if (insOk && finalId && finalId !== originalId) {
+          r.id = finalId;
+          dispatch({ type: ACTIONS.DELETE_CUSTOMER_REPAIR, payload: originalId });
+          dispatch({ type: ACTIONS.ADD_CUSTOMER_REPAIR, payload: { ...r, id: finalId } });
+        }
         if (error) {
           console.error('Add customer repair Supabase error:', error);
           Swal.fire({
@@ -2055,21 +2265,39 @@ export function StoreProvider({ children }) {
       // ── Shop Repair CRUD ──────────────────────────────────────
       else if (action.type === ACTIONS.ADD_SHOP_REPAIR) {
         const r = action.payload;
-        const { error } = await supabase.from('shop_repairs').insert({
-          id: r.id,
-          date: r.date,
-          customer_name: r.customerName,
-          customer_phone: r.customerPhone || null,
-          customer_address: r.customerAddress || null,
-          province: r.province || null,
-          machine_model: r.machineModel,
-          symptoms: r.symptoms || null,
-          technician: r.technician || null,
-          status: r.status || 'รอนัดวัน',
-          estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
-          actual_cost: r.actualCost ? Number(r.actualCost) : null,
-          notes: r.notes || null,
+        const originalId = r.id;
+        const { yymm } = getThaiYearMonth(r.date);
+        const {
+          success: insOk,
+          id: finalId,
+          error,
+        } = await insertWithUniqueIdRetry({
+          table: 'shop_repairs',
+          prefix: `WS${yymm}-`,
+          pad: 3,
+          column: 'id',
+          initialId: r.id,
+          buildRow: (candidateId) => ({
+            id: candidateId,
+            date: r.date,
+            customer_name: r.customerName,
+            customer_phone: r.customerPhone || null,
+            customer_address: r.customerAddress || null,
+            province: r.province || null,
+            machine_model: r.machineModel,
+            symptoms: r.symptoms || null,
+            technician: r.technician || null,
+            status: r.status || 'รอนัดวัน',
+            estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
+            actual_cost: r.actualCost ? Number(r.actualCost) : null,
+            notes: r.notes || null,
+          }),
         });
+        if (insOk && finalId && finalId !== originalId) {
+          r.id = finalId;
+          dispatch({ type: ACTIONS.DELETE_SHOP_REPAIR, payload: originalId });
+          dispatch({ type: ACTIONS.ADD_SHOP_REPAIR, payload: { ...r, id: finalId } });
+        }
         if (error) {
           console.error('Add shop repair Supabase error:', error);
           Swal.fire({
@@ -2113,23 +2341,41 @@ export function StoreProvider({ children }) {
       // ── Customer Delivery CRUD ────────────────────────────────
       else if (action.type === ACTIONS.ADD_CUSTOMER_DELIVERY) {
         const r = action.payload;
-        const { error } = await supabase.from('customer_deliveries').insert({
-          id: r.id,
-          date: r.date,
-          customer_name: r.customerName,
-          customer_phone: r.customerPhone || null,
-          customer_address: r.customerAddress || null,
-          province: r.province || null,
-          location_url: r.locationUrl || null,
-          appointment_date: r.appointmentDate || null,
-          machine_model: r.machineModel,
-          symptoms: r.symptoms || null,
-          technician: r.technician || null,
-          status: r.status || 'รอนัดวัน',
-          estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
-          actual_cost: r.actualCost ? Number(r.actualCost) : null,
-          notes: r.notes || null,
+        const originalId = r.id;
+        const { yymm } = getThaiYearMonth(r.date);
+        const {
+          success: insOk,
+          id: finalId,
+          error,
+        } = await insertWithUniqueIdRetry({
+          table: 'customer_deliveries',
+          prefix: `DL${yymm}-`,
+          pad: 3,
+          column: 'id',
+          initialId: r.id,
+          buildRow: (candidateId) => ({
+            id: candidateId,
+            date: r.date,
+            customer_name: r.customerName,
+            customer_phone: r.customerPhone || null,
+            customer_address: r.customerAddress || null,
+            province: r.province || null,
+            location_url: r.locationUrl || null,
+            appointment_date: r.appointmentDate || null,
+            machine_model: r.machineModel,
+            symptoms: r.symptoms || null,
+            technician: r.technician || null,
+            status: r.status || 'รอนัดวัน',
+            estimated_cost: r.estimatedCost ? Number(r.estimatedCost) : null,
+            actual_cost: r.actualCost ? Number(r.actualCost) : null,
+            notes: r.notes || null,
+          }),
         });
+        if (insOk && finalId && finalId !== originalId) {
+          r.id = finalId;
+          dispatch({ type: ACTIONS.DELETE_CUSTOMER_DELIVERY, payload: originalId });
+          dispatch({ type: ACTIONS.ADD_CUSTOMER_DELIVERY, payload: { ...r, id: finalId } });
+        }
         if (error) {
           console.error('Add customer delivery Supabase error:', error);
           Swal.fire({

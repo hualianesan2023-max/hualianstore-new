@@ -101,6 +101,7 @@ const POS = () => {
   const [applyVat, setApplyVat] = useState(true);
   const [selectedSalesperson, setSelectedSalesperson] = useState('หน้าร้าน');
   const [globalPriceType, setGlobalPriceType] = useState('sell');
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   // === Quotation-to-Order ===
   const savedQuotations = state?.quotations || [];
@@ -817,7 +818,8 @@ const POS = () => {
   const change = cashReceivedNum - total;
 
   // === Handle Checkout ===
-  const handleCheckout = useCallback(() => {
+  const handleCheckout = useCallback(async () => {
+    if (isCheckingOut) return;
     if (cart.length === 0) {
       showToast('❌ ตะกร้าว่างเปล่า', 'error');
       return;
@@ -828,80 +830,86 @@ const POS = () => {
       return;
     }
 
-    // Create sale record
-    const saleId = generateSaleId(state?.sales);
-    const saleRecord = {
-      id: saleId,
-      date: new Date().toISOString(),
-      items: cart.map((item) => ({
-        id: item.productId,
-        productId: item.productId,
-        name: item.name,
-        sellPrice: item.sellPrice,
-        costPrice: item.costPrice,
-        image: item.image,
-        quantity: item.quantity,
-        barcode: item.barcode,
-        selectedLocation: item.selectedLocation,
-      })),
-      subtotal,
-      discountCode: appliedDiscount?.code || null,
-      discountAmount,
-      tax,
-      shippingCost: shippingNum,
-      installationCost: installationNum,
-      applyVat,
-      isVatInclusive,
-      total,
-      paymentMethod,
-      cashReceived: paymentMethod === 'cash' ? cashReceivedNum : total,
-      change: paymentMethod === 'cash' ? Math.max(0, change) : 0,
-      storeName,
-      customer: customerType === 'general'
-        ? {
-            name: generalCustomerName.trim() || 'ลูกค้าทั่วไป',
-            phone: generalCustomerPhone.trim() || '-',
-            address: generalCustomerAddress.trim() || '-',
-            taxId: '-'
-          }
-        : selectedCustomer,
-      employee: selectedSalesperson,
-    };
+    setIsCheckingOut(true);
+    try {
+      // Create sale record (store.jsx ADD_SALE verifies against live DB & retries on collision across 7-8 terminals)
+      const saleId = generateSaleId(state?.sales);
+      const saleRecord = {
+        id: saleId,
+        date: new Date().toISOString(),
+        items: cart.map((item) => ({
+          id: item.productId,
+          productId: item.productId,
+          name: item.name,
+          sellPrice: item.sellPrice,
+          costPrice: item.costPrice,
+          image: item.image,
+          quantity: item.quantity,
+          barcode: item.barcode,
+          selectedLocation: item.selectedLocation,
+        })),
+        subtotal,
+        discountCode: appliedDiscount?.code || null,
+        discountAmount,
+        tax,
+        shippingCost: shippingNum,
+        installationCost: installationNum,
+        applyVat,
+        isVatInclusive,
+        total,
+        paymentMethod,
+        cashReceived: paymentMethod === 'cash' ? cashReceivedNum : total,
+        change: paymentMethod === 'cash' ? Math.max(0, change) : 0,
+        storeName,
+        customer: customerType === 'general'
+          ? {
+              name: generalCustomerName.trim() || 'ลูกค้าทั่วไป',
+              phone: generalCustomerPhone.trim() || '-',
+              address: generalCustomerAddress.trim() || '-',
+              taxId: '-'
+            }
+          : selectedCustomer,
+        employee: selectedSalesperson,
+      };
 
-    // Dispatch sale
-    dispatch({ type: 'ADD_SALE', payload: saleRecord });
+      // Dispatch sale and wait for atomic DB assignment
+      await dispatch({ type: 'ADD_SALE', payload: saleRecord });
 
-    // If this sale was loaded from a quotation, delete the quotation now that it has been paid!
-    if (loadedQuotationId) {
-      dispatch({ type: 'DELETE_QUOTATION', payload: loadedQuotationId });
-      setLoadedQuotationId(null);
+      // If this sale was loaded from a quotation, delete the quotation now that it has been paid!
+      if (loadedQuotationId) {
+        dispatch({ type: 'DELETE_QUOTATION', payload: loadedQuotationId });
+        setLoadedQuotationId(null);
+      }
+
+      // Show receipt with guaranteed unique ID from Supabase
+      setLastSale({ ...saleRecord });
+      setShowReceipt(true);
+
+      // Reset cart state
+      setCart([]);
+      setAppliedDiscount(null);
+      setDiscountCode('');
+      setDiscountMessage({ text: '', type: '' });
+      setCashReceived('');
+      setPaymentMethod('cash');
+      setSelectedCustomer(null);
+      setCustomerType('general');
+      setCustomerSearchQuery('');
+      setGeneralCustomerName('');
+      setGeneralCustomerPhone('');
+      setGeneralCustomerAddress('');
+      setShowGeneralCustomerFields(false);
+      setShippingCost('0');
+      setInstallationCost('0');
+      setSelectedSalesperson('หน้าร้าน');
+      setGlobalPriceType('sell');
+
+      showToast(`✅ ขายสำเร็จ — ${saleRecord.id}`, 'success');
+    } finally {
+      setIsCheckingOut(false);
     }
-
-    // Show receipt
-    setLastSale(saleRecord);
-    setShowReceipt(true);
-
-    // Reset cart state
-    setCart([]);
-    setAppliedDiscount(null);
-    setDiscountCode('');
-    setDiscountMessage({ text: '', type: '' });
-    setCashReceived('');
-    setPaymentMethod('cash');
-    setSelectedCustomer(null);
-    setCustomerType('general');
-    setCustomerSearchQuery('');
-    setGeneralCustomerName('');
-    setGeneralCustomerPhone('');
-    setGeneralCustomerAddress('');
-    setShowGeneralCustomerFields(false);
-    setShippingCost('0');
-    setInstallationCost('0');
-    setSelectedSalesperson('หน้าร้าน');
-    setGlobalPriceType('sell');
-
-    showToast(`✅ ขายสำเร็จ — ${saleId}`, 'success');
   }, [
+    isCheckingOut,
     cart,
     paymentMethod,
     cashReceivedNum,
@@ -918,10 +926,15 @@ const POS = () => {
     selectedCustomer,
     selectedSalesperson,
     state?.currentUser?.name,
+    state?.sales,
     customerType,
     generalCustomerName,
     generalCustomerPhone,
     generalCustomerAddress,
+    shippingNum,
+    installationNum,
+    applyVat,
+    loadedQuotationId,
   ]);
 
   // === Quick cash amounts ===
@@ -1947,12 +1960,14 @@ const POS = () => {
             className="btn-checkout"
             onClick={handleCheckout}
             disabled={
+              isCheckingOut ||
               cart.length === 0 ||
               (paymentMethod === 'cash' && cashReceivedNum < total && cashReceivedNum > 0)
             }
           >
-            ✅ ชำระเงิน — ฿
-            {total.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+            {isCheckingOut
+              ? '⏳ กำลังประมวลผล...'
+              : `✅ ชำระเงิน — ฿${total.toLocaleString('th-TH', { minimumFractionDigits: 2 })}`}
           </button>
         </div>
       </div>

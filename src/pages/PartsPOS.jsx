@@ -6,6 +6,11 @@ import './POS.css';
 import { showAlert, showConfirm } from '../utils/alerts';
 import Swal from 'sweetalert2';
 import { getPartImageUrl, LocalImageToolbar } from '../utils/localImageProvider';
+import {
+  insertWithUniqueIdRetry,
+  adjustPartStockAtomic,
+  getThaiYearMonth,
+} from '../utils/concurrency';
 
 const formatCurrency = (amount) => {
   return Number(amount || 0).toLocaleString('th-TH', {
@@ -123,7 +128,8 @@ const PartsPOS = () => {
       const { data, error } = await supabase
         .from('parts')
         .select('*')
-        .order('part_code', { ascending: true });
+        .order('part_code', { ascending: true })
+        .range(0, 9999);
       if (error) throw error;
       setParts(data || []);
     } catch (err) {
@@ -305,6 +311,22 @@ const PartsPOS = () => {
     [showToast]
   );
 
+  // === Set Custom Item Price ===
+  const setItemPrice = useCallback((cartItemId, rawValue) => {
+    const parsed = Math.round(parseFloat(rawValue) * 100) / 100;
+    if (!Number.isFinite(parsed) || parsed < 0) return;
+    setCart((prevCart) =>
+      prevCart.map((item) => {
+        if (item.id !== cartItemId) return item;
+        return {
+          ...item,
+          sellPrice: parsed,
+          isCustomPrice: true,
+        };
+      })
+    );
+  }, []);
+
   // === Change Global Price Type ===
   const handleGlobalPriceTypeChange = useCallback((newType) => {
     setGlobalPriceType(newType);
@@ -453,6 +475,7 @@ const PartsPOS = () => {
 
   // === Checkout Handler ===
   const handleCheckout = useCallback(async () => {
+    if (isCheckingOut) return;
     if (cart.length === 0) {
       showToast('❌ ตะกร้าว่างเปล่า', 'error');
       return;
@@ -466,38 +489,10 @@ const PartsPOS = () => {
     setIsCheckingOut(true);
 
     try {
-      // Generate unique sale ID from sales_part in Supabase + localStorage
-      const now = new Date();
-      const beYear = now.getFullYear() + 543;
-      const yearStr = String(beYear).slice(-2);
-      const monthStr = String(now.getMonth() + 1).padStart(2, '0');
-      const prefix = `IVS${yearStr}${monthStr}-`;
+      const nowIso = new Date().toISOString();
+      const { yymm } = getThaiYearMonth(nowIso);
+      const prefix = `IVS${yymm}-`;
 
-      let dbMax = 0;
-      try {
-        const { data: existingSalesInDb } = await supabase
-          .from('sales_part')
-          .select('id')
-          .like('id', `${prefix}%`);
-
-        if (existingSalesInDb && existingSalesInDb.length > 0) {
-          existingSalesInDb.forEach((s) => {
-            const numPart = s.id.slice(prefix.length);
-            const parsed = parseInt(numPart, 10);
-            if (!isNaN(parsed) && parsed > dbMax) {
-              dbMax = parsed;
-            }
-          });
-        }
-      } catch (err) {
-        console.warn('Could not fetch latest sales_part for sequence:', err);
-      }
-
-      const storageKey = `last_parts_sale_seq_${yearStr}${monthStr}`;
-      const localMax = parseInt(localStorage.getItem(storageKey), 10) || 0;
-      let nextNum = Math.max(dbMax, localMax) + 1;
-      const saleId = `${prefix}${String(nextNum).padStart(3, '0')}`;
-      localStorage.setItem(storageKey, String(nextNum));
       const customerObj = customerType === 'general'
         ? {
             name: generalCustomerName.trim() || 'ลูกค้าทั่วไป',
@@ -507,9 +502,49 @@ const PartsPOS = () => {
           }
         : (selectedCustomer || { name: 'ลูกค้าทั่วไป', phone: '-', address: '-', taxId: '-' });
 
+      const cashRecvVal = paymentMethod === 'cash' ? cashReceivedNum : total;
+      const changeVal = paymentMethod === 'cash' ? Math.max(0, change) : 0;
+
+      // 1. Atomically allocate unique IVS bill number & insert into 'sales_part' (auto-retries on 7-8 terminal collision)
+      const {
+        success: saleInsOk,
+        id: finalSaleId,
+        error: saleErr,
+      } = await insertWithUniqueIdRetry({
+        table: 'sales_part',
+        prefix,
+        pad: 3,
+        column: 'id',
+        buildRow: (candidateId) => ({
+          id: candidateId,
+          date: nowIso,
+          customer_name: customerObj.name,
+          customer_phone: customerObj.phone,
+          customer_address: customerObj.address,
+          customer_tax_id: customerObj.taxId,
+          salesperson: selectedSalesperson,
+          payment_method: paymentMethod,
+          discount_code: appliedDiscount?.code || null,
+          discount_amount: discountAmount,
+          subtotal: subtotal,
+          tax: tax,
+          shipping_cost: shippingNum,
+          total: total,
+          cash_received: cashRecvVal,
+          change: changeVal,
+          apply_vat: applyVat,
+          is_vat_inclusive: isVatInclusive,
+        }),
+      });
+
+      if (!saleInsOk || saleErr) {
+        console.error('Failed to insert parts sale:', saleErr);
+        throw saleErr || new Error('ไม่สามารถออกเลขที่บิลขายอะไหล่ได้');
+      }
+
       const saleRecord = {
-        id: saleId,
-        date: new Date().toISOString(),
+        id: finalSaleId,
+        date: nowIso,
         items: cart.map((item) => ({
           id: item.partCode,
           productId: null,
@@ -532,61 +567,27 @@ const PartsPOS = () => {
         isVatInclusive,
         total,
         paymentMethod,
-        cashReceived: paymentMethod === 'cash' ? cashReceivedNum : total,
-        change: paymentMethod === 'cash' ? Math.max(0, change) : 0,
+        cashReceived: cashRecvVal,
+        change: changeVal,
         storeName,
         customer: customerObj,
         employee: selectedSalesperson,
       };
 
-      // 1. Deduct Stock in Supabase 'parts' table
+      // 2. Atomically deduct stock in Supabase 'parts' table via Compare-And-Swap (CAS)
       for (const item of cart) {
-        const curPart = parts.find((p) => p.id === item.partId);
-        const curQty = Number(curPart?.quantity || 0);
-        const newQty = Math.max(0, curQty - item.quantity);
-
-        const { error: partErr } = await supabase
-          .from('parts')
-          .update({
-            quantity: newQty,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', item.partId);
-
+        const { error: partErr } = await adjustPartStockAtomic({
+          partId: item.partId,
+          delta: -Number(item.quantity || 0),
+        });
         if (partErr) {
           console.error(`Failed to deduct stock for part ${item.partCode}:`, partErr);
         }
       }
 
-      // 2. Insert into Supabase 'sales_part'
-      const { error: saleErr } = await supabase.from('sales_part').insert({
-        id: saleId,
-        date: saleRecord.date,
-        customer_name: customerObj.name,
-        customer_phone: customerObj.phone,
-        customer_address: customerObj.address,
-        customer_tax_id: customerObj.taxId,
-        salesperson: selectedSalesperson,
-        payment_method: paymentMethod,
-        discount_code: appliedDiscount?.code || null,
-        discount_amount: discountAmount,
-        subtotal: subtotal,
-        tax: tax,
-        shipping_cost: shippingNum,
-        total: total,
-        cash_received: saleRecord.cashReceived,
-        change: saleRecord.change,
-        apply_vat: applyVat,
-        is_vat_inclusive: isVatInclusive,
-      });
-
-      if (saleErr) {
-        console.error('Failed to insert parts sale:', saleErr);
-      }
-
       // 3. Insert into Supabase 'sale_items_part'
       const saleItemsPayload = cart.map((item) => ({
-        sale_id: saleId,
+        sale_id: finalSaleId,
         product_id: item.partCode || null,
         product_name: `${item.name} [${item.partCode}]`,
         quantity: item.quantity,
@@ -600,14 +601,14 @@ const PartsPOS = () => {
         console.error('Failed to insert parts sale items:', itemsErr);
       }
 
-      // 5. Re-fetch parts so stock reflects immediately
+      // 4. Re-fetch parts so stock reflects immediately
       await fetchParts();
 
-      // 6. Show receipt
+      // 5. Show receipt
       setLastSale(saleRecord);
       setShowReceipt(true);
 
-      // 7. Reset form state
+      // 6. Reset form state
       setCart([]);
       setAppliedDiscount(null);
       setDiscountCode('');
@@ -624,7 +625,7 @@ const PartsPOS = () => {
       setShippingCost('0');
       setInstallationCost('0');
 
-      showToast(`✅ ขายอะไหล่สำเร็จ — ${saleId}`, 'success');
+      showToast(`✅ ขายอะไหล่สำเร็จ — ${finalSaleId}`, 'success');
     } catch (err) {
       console.error('Checkout error:', err);
       showAlert('ข้อผิดพลาด', err.message || 'เกิดข้อผิดพลาดในการบันทึกการขาย', 'error');
@@ -632,6 +633,7 @@ const PartsPOS = () => {
       setIsCheckingOut(false);
     }
   }, [
+    isCheckingOut,
     cart,
     paymentMethod,
     cashReceivedNum,
@@ -834,10 +836,10 @@ const PartsPOS = () => {
                       </div>
                       <div
                         className={`price-badge branch ${(globalPriceType === 'branch' || globalPriceType === 'dealer') ? 'highlight' : ''}`}
-                        title="ราคาสาขา / ตัวแทน"
+                        title="ราคาตัวแทน"
                         style={(globalPriceType === 'branch' || globalPriceType === 'dealer') ? { border: '1px solid #818cf8', background: 'rgba(99, 102, 241, 0.25)' } : {}}
                       >
-                        <span className="price-label">สาขา</span>
+                        <span className="price-label">ตัวแทน</span>
                         <span className="price-val">฿{(part.dealer_price || 0).toLocaleString('th-TH')}</span>
                       </div>
                       <div
@@ -990,7 +992,7 @@ const PartsPOS = () => {
                 outline: 'none'
               }}
             >
-              ราคาสาขา
+              ราคาตัวแทน
             </button>
           </div>
         </div>
@@ -1026,14 +1028,19 @@ const PartsPOS = () => {
                     </button>
                   </div>
 
-                  {/* Row 2: Price per Unit + Quantity Controls + Line Total */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginTop: '6px', width: '100%' }}>
-                    <div style={{ fontSize: '12.5px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span>฿{(applyVat && isVatInclusive ? item.sellPrice / 1.07 : item.sellPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      <span style={{ fontSize: '11px', color: '#6b7280' }}>/ ชิ้น</span>
+                  {/* Row 2: Price per Unit / Status + Quantity Controls + Line Total / Custom Price Input */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '6px', width: '100%' }}>
+                    <div style={{ fontSize: '12px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {item.isCustomPrice ? (
+                        <span style={{ fontSize: '11px', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)', padding: '1px 5px', borderRadius: '4px' }}>
+                          ✎ กำหนดเอง
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: '#6b7280' }}>/ ชิ้น</span>
+                      )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div className="cart-item-controls">
                         <button onClick={() => updateQuantity(item.id, -1)}>
                           −
@@ -1065,8 +1072,63 @@ const PartsPOS = () => {
                         </button>
                       </div>
 
-                      <div className="cart-item-total" style={{ minWidth: '70px', textAlign: 'right' }}>
-                        ฿{(applyVat && isVatInclusive ? (item.sellPrice * item.quantity) / 1.07 : item.sellPrice * item.quantity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {/* Editable Price Box (ตรงตำแหน่งวงสีแดง) */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: '85px' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            background: '#11121c',
+                            border: '1.5px solid #10b981',
+                            borderRadius: '6px',
+                            padding: '2px 6px',
+                            gap: '3px',
+                            boxShadow: '0 0 6px rgba(16, 185, 129, 0.25)'
+                          }}
+                          title="กรอกราคาที่จะขายเองได้ (คลิกเพื่อแก้ไข)"
+                        >
+                          <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 'bold' }}>฿</span>
+                          <input
+                            key={`${item.id}-${item.sellPrice}`}
+                            type="number"
+                            inputMode="decimal"
+                            step="any"
+                            min="0"
+                            defaultValue={item.sellPrice}
+                            onFocus={(e) => e.target.select()}
+                            onBlur={(e) => {
+                              const typed = e.target.value;
+                              if (typed !== '' && !isNaN(typed)) {
+                                const num = parseFloat(typed);
+                                if (num >= 0 && num !== item.sellPrice) {
+                                  setItemPrice(item.id, num);
+                                }
+                              } else {
+                                e.target.value = item.sellPrice;
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                            }}
+                            style={{
+                              width: '68px',
+                              textAlign: 'right',
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#34d399',
+                              fontSize: '13.5px',
+                              fontWeight: '700',
+                              outline: 'none',
+                              padding: '0',
+                              MozAppearance: 'textfield'
+                            }}
+                          />
+                        </div>
+                        {Number(item.quantity) > 1 && (
+                          <span style={{ fontSize: '10.5px', color: '#9ca3af', marginTop: '2px' }}>
+                            รวม ฿{((applyVat && isVatInclusive ? (item.sellPrice * item.quantity) / 1.07 : item.sellPrice * item.quantity)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

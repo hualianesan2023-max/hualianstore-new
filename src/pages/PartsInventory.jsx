@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../data/supabaseClient';
 import { showAlert, showConfirm } from '../utils/alerts';
 import { getPartImageUrl, LocalImageToolbar } from '../utils/localImageProvider';
+import { fetchNextPartCode, insertWithUniqueIdRetry } from '../utils/concurrency';
 import './PartsInventory.css';
 
 // ── Image Compressor ─────────────────────────────────────────
@@ -58,6 +59,37 @@ const safeInt = (v) => {
   return isNaN(n) ? 0 : n;
 };
 
+// ── Auto-generate Part Code (Fill gaps first, else max + 1) ──
+const getNextAvailablePartCode = (partsList = []) => {
+  const existingNums = new Set();
+  const prefix = 'HL-';
+  const padding = 6;
+
+  partsList.forEach((p) => {
+    if (!p || !p.part_code) return;
+    const codeStr = String(p.part_code).trim();
+    const m = codeStr.match(/HL[-_]?(\d+)/i) || codeStr.match(/(\d+)/);
+    if (m) {
+      const num = parseInt(m[1], 10);
+      if (!isNaN(num) && num > 0) {
+        existingNums.add(num);
+      }
+    }
+  });
+
+  if (existingNums.size === 0) {
+    return `${prefix}${String(1).padStart(padding, '0')}`;
+  }
+
+  // Find lowest missing sequence number (e.g. if HL-000005 was deleted, reuse 5)
+  let targetNum = 1;
+  while (existingNums.has(targetNum)) {
+    targetNum++;
+  }
+
+  return `${prefix}${String(targetNum).padStart(padding, '0')}`;
+};
+
 // ── Component ────────────────────────────────────────────────
 const PartsInventory = () => {
   const [parts, setParts]           = useState([]);
@@ -85,7 +117,7 @@ const PartsInventory = () => {
     setIsLoading(true);
     try {
       const { data, error } = await supabase
-        .from('parts').select('*').order('part_code', { ascending: true });
+        .from('parts').select('*').order('part_code', { ascending: true }).range(0, 9999);
       if (error) throw error;
       setParts(data || []);
     } catch (err) {
@@ -160,7 +192,28 @@ const PartsInventory = () => {
   const outCnt   = parts.filter((p) => Number(p.quantity) === 0).length;
 
   // ── Modal open ──
-  const openAdd = () => { setForm(EMPTY_FORM); setEditingId(null); setShowModal(true); };
+  const openAdd = async () => {
+    const nextCode = getNextAvailablePartCode(parts);
+    setForm({ ...EMPTY_FORM, part_code: nextCode });
+    setEditingId(null);
+    setShowModal(true);
+
+    try {
+      const liveCode = await fetchNextPartCode({ localParts: parts });
+      setForm((prev) => ({ ...prev, part_code: liveCode }));
+    } catch (e) {
+      // Fallback already set
+    }
+  };
+
+  // Keep part_code synced in real-time if another machine adds/deletes a part while modal is open
+  useEffect(() => {
+    if (showModal && !editingId) {
+      const nextCode = getNextAvailablePartCode(parts);
+      setForm((prev) => (prev.part_code !== nextCode ? { ...prev, part_code: nextCode } : prev));
+    }
+  }, [parts, showModal, editingId]);
+
   const openEdit = (p, e) => {
     e?.stopPropagation();
     setForm({
@@ -196,18 +249,17 @@ const PartsInventory = () => {
 
   // ── Save Form ──
   const handleSave = async () => {
-    if (!form.part_code.trim()) { showAlert('กรุณากรอก', 'รหัสสินค้าห้ามว่าง', 'warning'); return; }
+    if (isSaving) return;
+    let finalPartCode = form.part_code.trim();
+    if (!finalPartCode && !editingId) {
+      finalPartCode = getNextAvailablePartCode(parts);
+    }
+    if (!finalPartCode) { showAlert('กรุณากรอก', 'รหัสสินค้าห้ามว่าง', 'warning'); return; }
     if (!form.name.trim())      { showAlert('กรุณากรอก', 'ชื่อสินค้าห้ามว่าง', 'warning');  return; }
 
-    // Duplicate check (add only)
-    if (!editingId) {
-      const dup = parts.find((p) => p.part_code.toLowerCase() === form.part_code.trim().toLowerCase());
-      if (dup) { showAlert('รหัสซ้ำ', `รหัสสินค้า "${form.part_code.trim()}" มีอยู่แล้วในระบบ`, 'warning'); return; }
-    }
-
     setIsSaving(true);
-    const payload = {
-      part_code:    form.part_code.trim(),
+    const buildPayload = (code) => ({
+      part_code:    code,
       name:         form.name.trim(),
       category:     form.category.trim(),
       type:         form.type.trim(),
@@ -219,15 +271,28 @@ const PartsInventory = () => {
       image_data:   form.image_data || null,
       image_name:   form.image_name || null,
       updated_at:   new Date().toISOString(),
-    };
+    });
 
     try {
       if (editingId) {
+        const payload = buildPayload(finalPartCode);
         const { error } = await supabase.from('parts').update(payload).eq('id', editingId);
         if (error) throw error;
         if (selectedPart?.id === editingId) setSelectedPart({ ...selectedPart, ...payload });
       } else {
-        const { error } = await supabase.from('parts').insert([{ ...payload, created_at: new Date().toISOString() }]);
+        const { error } = await insertWithUniqueIdRetry({
+          table: 'parts',
+          prefix: 'HL-',
+          pad: 6,
+          column: 'part_code',
+          initialId: finalPartCode,
+          localFallbackList: parts,
+          customNextIdFn: ({ triedIds }) => fetchNextPartCode({ localParts: parts, triedCodes: triedIds }),
+          buildRow: (code) => ({
+            ...buildPayload(code),
+            created_at: new Date().toISOString(),
+          }),
+        });
         if (error) throw error;
       }
       await fetchParts();
@@ -878,7 +943,14 @@ const PartsInventory = () => {
                 <div className="pi-field-2">
                   <div className="pi-field">
                     <label>รหัสสินค้า *</label>
-                    <input type="text" value={form.part_code} onChange={(e) => setForm((p) => ({ ...p, part_code: e.target.value }))} placeholder="เช่น HL-000001" />
+                    <input
+                      type="text"
+                      value={form.part_code}
+                      readOnly
+                      className="pi-input-readonly"
+                      placeholder="เช่น HL-000001"
+                      title="รหัสสินค้ารันอัตโนมัติ ไม่สามารถพิมพ์แก้ไขได้"
+                    />
                   </div>
                   <div className="pi-field">
                     <label>ที่อยู่ / ชั้นวาง</label>

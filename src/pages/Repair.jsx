@@ -859,7 +859,8 @@ const Repair = () => {
   const [customDate, setCustomDate]     = useState('');
   const [sortBy, setSortBy]             = useState('appointmentDate'); // 'appointmentDate' | 'id'
   const [sortOrder, setSortOrder]       = useState('asc'); // 'asc' | 'desc'
-  const [receiptRecord, setReceiptRecord] = useState(null); // ← ใบรับซ่อม
+  const [receiptRecord, setReceiptRecord] = useState(null);
+  const [isSaving, setIsSaving] = useState(false); // ← ใบรับซ่อม
 
   const currentList = useMemo(() => {
     let list = [];
@@ -1039,22 +1040,32 @@ const Repair = () => {
   };
 
   const handleSave = async (formData) => {
-    const today = new Date().toISOString().split('T')[0];
-    if (editRecord) {
-      // Update
-      await dispatch({ type: `UPDATE_${actionPrefix}`, payload: { ...editRecord, ...formData } });
-      setShowModal(false);
-      setEditRecord(null);
-    } else {
-      const newId = generateRepairId(currentList, idPrefix);
-      const newRecord = { id: newId, date: today, ...formData };
-      await dispatch({ type: `ADD_${actionPrefix}`, payload: newRecord });
-      setShowModal(false);
-      setEditRecord(null);
-      // Show receipt popup only when adding a new in-store shop repair
-      if (activeTab === 'shop') {
-        setReceiptRecord(newRecord);
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      if (editRecord) {
+        // Update
+        const ok = await dispatch({ type: `UPDATE_${actionPrefix}`, payload: { ...editRecord, ...formData } });
+        if (ok !== false) {
+          setShowModal(false);
+          setEditRecord(null);
+        }
+      } else {
+        const newId = generateRepairId(currentList, idPrefix);
+        const newRecord = { id: newId, date: today, ...formData };
+        const ok = await dispatch({ type: `ADD_${actionPrefix}`, payload: newRecord });
+        if (ok !== false) {
+          setShowModal(false);
+          setEditRecord(null);
+          // Show receipt popup only when adding a new in-store shop repair (uses collision-verified newRecord.id)
+          if (activeTab === 'shop') {
+            setReceiptRecord({ ...newRecord });
+          }
+        }
       }
+    } finally {
+      setIsSaving(false);
     }
   };
 

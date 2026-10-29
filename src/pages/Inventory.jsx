@@ -63,6 +63,7 @@ const Inventory = () => {
       payload: { 
         id: adjustProduct.id, 
         stock: newStock, 
+        delta: amount,
         location: adjustLocation 
       },
     });
@@ -74,13 +75,14 @@ const Inventory = () => {
 
   // Quick adjust (+10, -1, etc.)
   const handleQuickAdjust = (product, delta) => {
-    // Adjust only the primary warehouse (stockBig) and preserve others
+    // Adjust only the primary warehouse (stockBig) atomically and preserve others
     const newStockBig = Math.max(0, Number(product.stockBig || 0) + delta);
     dispatch({
       type: 'SET_STOCK',
       payload: { 
         id: product.id, 
         stock: newStockBig, 
+        delta,
         location: 'โกดังใหญ่' 
       },
     });
