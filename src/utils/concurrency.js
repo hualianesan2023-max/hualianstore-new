@@ -26,7 +26,15 @@ export const getThaiYearMonth = (dateInput) => {
   const validDate = isNaN(d.getTime()) ? new Date() : d;
   const yy = String(validDate.getFullYear() + 543).slice(-2);
   const mm = String(validDate.getMonth() + 1).padStart(2, '0');
-  return { yy, mm, yymm: `${yy}${mm}` };
+  const yymm = `${yy}${mm}`;
+  return {
+    yy,
+    mm,
+    yymm,
+    toString() {
+      return yymm;
+    },
+  };
 };
 
 // Track whether optional PostgreSQL RPC functions from concurrency_multi_user.sql are installed
@@ -250,6 +258,7 @@ export async function insertWithUniqueIdRetry({
       return {
         success: true,
         id: candidateId,
+        finalId: candidateId,
         data: Array.isArray(data) ? data[0] : data,
         error: null,
       };

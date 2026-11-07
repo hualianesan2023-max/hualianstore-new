@@ -11,6 +11,13 @@ import {
   adjustPartStockAtomic,
   getThaiYearMonth,
 } from '../utils/concurrency';
+import {
+  DEFAULT_PART_UNIT,
+  getRememberedPartUnit,
+  rememberPartUnit,
+  encodePartLocationWithUnit,
+  PartUnitComboBox,
+} from '../utils/partUnits';
 
 const formatCurrency = (amount) => {
   return Number(amount || 0).toLocaleString('th-TH', {
@@ -225,7 +232,7 @@ const PartsPOS = () => {
         const existing = prevCart.find((item) => item.partId === part.id);
         if (existing) {
           if (existing.quantity >= maxStock) {
-            showToast(`⚠️ สต็อกไม่เพียงพอ (คงเหลือ ${maxStock} ชิ้น)`, 'error');
+            showToast(`⚠️ สต็อกไม่เพียงพอ (คงเหลือ ${maxStock} ${existing.unit || DEFAULT_PART_UNIT})`, 'error');
             return prevCart;
           }
           return prevCart.map((item) =>
@@ -250,7 +257,7 @@ const PartsPOS = () => {
             location: part.location || '—',
             category: part.category || '—',
             type: part.type || '—',
-            unit: 'ชิ้น',
+            unit: part.unit || getRememberedPartUnit(part.part_code) || DEFAULT_PART_UNIT,
             costPrice: Number(part.cost_price || 0),
             dealerPrice: Number(part.dealer_price || 0),
             normalPrice: Number(part.sell_price || 0),
@@ -281,7 +288,7 @@ const PartsPOS = () => {
             if (item.id !== cartItemId) return item;
             const newQty = Math.round((Number(item.quantity) + delta) * 1000) / 1000;
             if (newQty > item.maxStock) {
-              showToast(`⚠️ สต็อกคงเหลือสูงสุด: ${item.maxStock} ชิ้น`, 'error');
+              showToast(`⚠️ สต็อกคงเหลือสูงสุด: ${item.maxStock} ${item.unit || DEFAULT_PART_UNIT}`, 'error');
               return item;
             }
             return { ...item, quantity: newQty };
@@ -301,7 +308,7 @@ const PartsPOS = () => {
         prevCart.map((item) => {
           if (item.id !== cartItemId) return item;
           if (parsed > item.maxStock) {
-            showToast(`⚠️ สต็อกคงเหลือ: ${item.maxStock} ชิ้น`, 'error');
+            showToast(`⚠️ สต็อกคงเหลือ: ${item.maxStock} ${item.unit || DEFAULT_PART_UNIT}`, 'error');
             return item;
           }
           return { ...item, quantity: parsed };
@@ -310,6 +317,22 @@ const PartsPOS = () => {
     },
     [showToast]
   );
+
+  // === Set Item Unit ===
+  const setItemUnit = useCallback((cartItemId, newUnit) => {
+    setCart((prevCart) =>
+      prevCart.map((item) => {
+        if (item.id !== cartItemId) return item;
+        if (newUnit && String(newUnit).trim()) {
+          rememberPartUnit(item.partCode, String(newUnit).trim());
+        }
+        return {
+          ...item,
+          unit: newUnit,
+        };
+      })
+    );
+  }, []);
 
   // === Set Custom Item Price ===
   const setItemPrice = useCallback((cartItemId, rawValue) => {
@@ -545,18 +568,22 @@ const PartsPOS = () => {
       const saleRecord = {
         id: finalSaleId,
         date: nowIso,
-        items: cart.map((item) => ({
-          id: item.partCode,
-          productId: null,
-          partId: item.partId,
-          name: item.name,
-          barcode: item.partCode,
-          unit: item.unit || 'ชิ้น',
-          sellPrice: item.sellPrice,
-          costPrice: item.costPrice,
-          quantity: item.quantity,
-          selectedLocation: item.location || 'หน้าร้าน',
-        })),
+        items: cart.map((item) => {
+          const finalUnit = String(item.unit || DEFAULT_PART_UNIT).trim() || DEFAULT_PART_UNIT;
+          rememberPartUnit(item.partCode, finalUnit);
+          return {
+            id: item.partCode,
+            productId: item.partCode,
+            partId: item.partId,
+            name: item.name,
+            barcode: item.partCode,
+            unit: finalUnit,
+            sellPrice: item.sellPrice,
+            costPrice: item.costPrice,
+            quantity: item.quantity,
+            selectedLocation: item.location || 'หน้าร้าน',
+          };
+        }),
         subtotal,
         discountCode: appliedDiscount?.code || null,
         discountAmount,
@@ -576,6 +603,7 @@ const PartsPOS = () => {
 
       // 2. Atomically deduct stock in Supabase 'parts' table via Compare-And-Swap (CAS)
       for (const item of cart) {
+        const finalUnit = String(item.unit || DEFAULT_PART_UNIT).trim() || DEFAULT_PART_UNIT;
         const { error: partErr } = await adjustPartStockAtomic({
           partId: item.partId,
           delta: -Number(item.quantity || 0),
@@ -583,22 +611,45 @@ const PartsPOS = () => {
         if (partErr) {
           console.error(`Failed to deduct stock for part ${item.partCode}:`, partErr);
         }
+        // Sync remembered unit to 'parts.unit' if column exists in DB (silent fallback if not run yet)
+        if (item.partId) {
+          await supabase.from('parts').update({ unit: finalUnit }).eq('id', item.partId);
+        }
       }
 
-      // 3. Insert into Supabase 'sale_items_part'
-      const saleItemsPayload = cart.map((item) => ({
-        sale_id: finalSaleId,
-        product_id: item.partCode || null,
-        product_name: `${item.name} [${item.partCode}]`,
-        quantity: item.quantity,
-        cost_price: item.costPrice,
-        sell_price: item.sellPrice,
-        selected_location: item.location || 'หน้าร้าน',
-      }));
+      // 3. Insert into Supabase 'sale_items_part' (writes native 'unit' column if added via SQL, with automatic fallback)
+      const saleItemsWithUnitCol = cart.map((item) => {
+        const finalUnit = String(item.unit || DEFAULT_PART_UNIT).trim() || DEFAULT_PART_UNIT;
+        return {
+          sale_id: finalSaleId,
+          product_id: item.partCode || null,
+          product_name: `${item.name} [${item.partCode}]`,
+          quantity: item.quantity,
+          unit: finalUnit,
+          cost_price: item.costPrice,
+          sell_price: item.sellPrice,
+          selected_location: item.location || 'หน้าร้าน',
+        };
+      });
 
-      const { error: itemsErr } = await supabase.from('sale_items_part').insert(saleItemsPayload);
-      if (itemsErr) {
-        console.error('Failed to insert parts sale items:', itemsErr);
+      const { error: itemsWithColErr } = await supabase.from('sale_items_part').insert(saleItemsWithUnitCol);
+      if (itemsWithColErr) {
+        const fallbackPayload = cart.map((item) => {
+          const finalUnit = String(item.unit || DEFAULT_PART_UNIT).trim() || DEFAULT_PART_UNIT;
+          return {
+            sale_id: finalSaleId,
+            product_id: item.partCode || null,
+            product_name: `${item.name} [${item.partCode}]`,
+            quantity: item.quantity,
+            cost_price: item.costPrice,
+            sell_price: item.sellPrice,
+            selected_location: encodePartLocationWithUnit(item.location || 'หน้าร้าน', finalUnit),
+          };
+        });
+        const { error: fallbackErr } = await supabase.from('sale_items_part').insert(fallbackPayload);
+        if (fallbackErr) {
+          console.error('Failed to insert parts sale items:', fallbackErr);
+        }
       }
 
       // 4. Re-fetch parts so stock reflects immediately
@@ -1028,19 +1079,19 @@ const PartsPOS = () => {
                     </button>
                   </div>
 
-                  {/* Row 2: Price per Unit / Status + Quantity Controls + Line Total / Custom Price Input */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '6px', width: '100%' }}>
-                    <div style={{ fontSize: '12px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      {item.isCustomPrice ? (
-                        <span style={{ fontSize: '11px', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)', padding: '1px 5px', borderRadius: '4px' }}>
-                          ✎ กำหนดเอง
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: '11px', color: '#6b7280' }}>/ ชิ้น</span>
-                      )}
+                  {/* Row 2: Unit ComboBox + Quantity Controls + Custom Price Input */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginTop: '6px', width: '100%', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <PartUnitComboBox
+                        value={item.unit}
+                        onChange={(val) => setItemUnit(item.id, val)}
+                        showLabel={true}
+                        width={84}
+                        compact={true}
+                      />
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <div className="cart-item-controls">
                         <button onClick={() => updateQuantity(item.id, -1)}>
                           −
@@ -1062,7 +1113,7 @@ const PartsPOS = () => {
                           }}
                           onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                           style={{
-                            width: '56px', textAlign: 'center', background: 'transparent',
+                            width: '52px', textAlign: 'center', background: 'transparent',
                             border: '1px solid #2d3148', borderRadius: '6px', color: 'inherit',
                             padding: '2px 4px', fontSize: 'inherit', fontWeight: 'inherit', MozAppearance: 'textfield'
                           }}
@@ -1073,7 +1124,7 @@ const PartsPOS = () => {
                       </div>
 
                       {/* Editable Price Box (ตรงตำแหน่งวงสีแดง) */}
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: '85px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: '82px' }}>
                         <div
                           style={{
                             display: 'flex',
@@ -1111,7 +1162,7 @@ const PartsPOS = () => {
                               if (e.key === 'Enter') e.currentTarget.blur();
                             }}
                             style={{
-                              width: '68px',
+                              width: '64px',
                               textAlign: 'right',
                               background: 'transparent',
                               border: 'none',
@@ -1133,13 +1184,18 @@ const PartsPOS = () => {
                     </div>
                   </div>
 
-                  {/* Row 3: Bottom Location Row */}
+                  {/* Row 3: Bottom Location & Stock Row */}
                   <div className="cart-item-warehouse-row" style={{ marginTop: '6px' }}>
-                    <span>
-                      📍 ตำแหน่ง: {item.location || '—'}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <span>📍 ตำแหน่ง: {item.location || '—'}</span>
+                      {item.isCustomPrice && (
+                        <span style={{ fontSize: '10.5px', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)', padding: '1px 5px', borderRadius: '4px' }}>
+                          ✎ ราคาแก้ไข
+                        </span>
+                      )}
                     </span>
                     <span style={{ fontSize: '11.5px', color: '#9ca3af' }}>
-                      คงเหลือในคลัง: {item.maxStock} ชิ้น
+                      คงเหลือในคลัง: {item.maxStock} {item.unit || DEFAULT_PART_UNIT}
                     </span>
                   </div>
                 </div>
@@ -1514,7 +1570,7 @@ const PartsPOS = () => {
           {/* Summary */}
           <div className="cart-summary">
             <div className="cart-summary-row">
-              <span>ยอดรวมสินค้า ({cartCount} ชิ้น)</span>
+              <span>ยอดรวมสินค้า ({cart.length} รายการ)</span>
               <span>
                 ฿{subtotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
               </span>

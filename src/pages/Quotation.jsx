@@ -116,7 +116,7 @@ const Quotation = () => {
   const store = state?.storeInfo || {
     name: 'ห้างลงทุนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.',
     address: 'สำนักงานใหญ่ : 841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000',
-    phone: '044-002716 , 084-1844310 (บัญชี) แฟ็ก. 044-248869',
+    phone: '044-002716 , 085-4957093',
     taxId: '0303547004494',
     taxRate: 7,
   };
@@ -214,7 +214,8 @@ const Quotation = () => {
 
     // Sync live quotation number from Supabase across all machines
     try {
-      const prefix = `QT${getThaiYearMonth(today)}-`;
+      const { yymm } = getThaiYearMonth(today);
+      const prefix = `QT${yymm}-`;
       const liveNo = await fetchNextDocumentId({
         table: 'quotations',
         prefix,
@@ -1471,7 +1472,7 @@ const QuotationPreviewModal = ({ quotation, store, onClose }) => {
                 <h1 className="q-company-name">{store.name}</h1>
                 <p className="q-company-details">
                   {store.address} <br/>
-                  เลขประจำตัวผู้เสียภาษี: {store.taxId} | โทร: {store.phone}
+                  เลขประจำตัวผู้เสียภาษี: {store.taxId} | โทร. 044-002716 , 085-4957093
                 </p>
               </div>
             </div>

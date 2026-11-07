@@ -202,7 +202,7 @@ const Receipt = ({ sale, onClose }) => {
                 <h1 className="company-name">{store.name || 'ห้างหุ้นส่วนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.'}</h1>
                 <p className="company-address">{store.address || 'สำนักงานใหญ่ : 841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000'}</p>
                 <p className="company-contact">
-                  เลขประจำตัวผู้เสียภาษี {store.taxId || '0303547004494'} โทร. {store.phone || '044-002716 , 084-1844310 (บัญชี) แฟ็ก. 044-248869'}
+                  เลขประจำตัวผู้เสียภาษี {store.taxId || '0303547004494'} โทร. 044-002716 , 085-4957093
                 </p>
               </div>
             </div>
@@ -278,13 +278,22 @@ const Receipt = ({ sale, onClose }) => {
 
                     const itemPrice = showPreVat ? (catalogPrice / 1.07) : catalogPrice;
                     const itemTotal = showPreVat ? (catalogTotal / 1.07) : catalogTotal;
-                    // Find unit from store products if not saved in item
-                    const productUnit = item.unit || state.products.find(p => p.id === item.productId)?.unit || 'เครื่อง';
+                    // Find unit from item or store products; default to 'ตัว' for spare part bills, 'เครื่อง' for machines
+                    const itemCode = item.productId || item.id || '';
+                    const isSparePart = Boolean(
+                      (sale.id && String(sale.id).startsWith('IVS')) ||
+                      item.partId ||
+                      String(itemCode).toUpperCase().startsWith('HL-')
+                    );
+                    const productUnit =
+                      item.unit ||
+                      state.products.find((p) => p.id === itemCode)?.unit ||
+                      (isSparePart ? 'ตัว' : 'เครื่อง');
 
                     return (
-                      <tr key={item.productId || idx}>
+                      <tr key={itemCode || idx}>
                         <td style={{ textAlign: 'center' }}>{idx + 1}</td>
-                        <td style={{ textAlign: 'center' }}>{item.productId || '-'}</td>
+                        <td style={{ textAlign: 'center' }}>{itemCode || '-'}</td>
                         <td className="item-description-cell">
                           {item.name}
                           {sale.discountAmount > 0 && idx === 0 && (

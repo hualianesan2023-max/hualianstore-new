@@ -164,7 +164,7 @@ const RepairReceiptHalf = ({ record, store, statusObj, province, partNumber, par
           <div className="rr-company-name">{store?.name || 'ห้างหุ้นส่วนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.'}</div>
           <div className="rr-company-addr">{store?.address || 'สำนักงานใหญ่ : 841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000'}</div>
           <div className="rr-company-contact">
-            โทร: {store?.phone || '044-002716 , 084-1844310 (บัญชี) แฟ็ก. 044-248869'} | เลขผู้เสียภาษี: {store?.taxId || '0303547004494'}
+            โทร. 044-002716 , 085-4957093 | เลขผู้เสียภาษี: {store?.taxId || '0303547004494'}
           </div>
         </div>
       </div>

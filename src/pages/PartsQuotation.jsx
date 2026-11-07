@@ -5,6 +5,12 @@ import logoImg from '../assets/logo.png';
 import './Quotation.css';
 import { showAlert, showConfirm } from '../utils/alerts';
 import { fetchNextDocumentId, insertWithUniqueIdRetry, getThaiYearMonth } from '../utils/concurrency';
+import {
+  DEFAULT_PART_UNIT,
+  getRememberedPartUnit,
+  rememberPartUnit,
+  PartUnitComboBox,
+} from '../utils/partUnits';
 
 // ── Thai Baht Text Conversion ───────────────────────────────────
 const bahtText = (num) => {
@@ -117,7 +123,7 @@ const PartsQuotation = () => {
   const store = state?.storeInfo || {
     name: 'ห้างลงทุนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.',
     address: 'สำนักงานใหญ่ : 841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000',
-    phone: '044-002716 , 084-1844310 (บัญชี) แฟ็ก. 044-248869',
+    phone: '044-002716 , 085-4957093',
     taxId: '0303547004494',
     taxRate: 7,
   };
@@ -153,7 +159,7 @@ const PartsQuotation = () => {
           name: it.product_name,
           quantity: Number(it.quantity || 1),
           sellPrice: Number(it.sell_price || 0),
-          unit: it.unit || 'ชิ้น'
+          unit: it.unit || DEFAULT_PART_UNIT
         });
         return acc;
       }, {});
@@ -285,7 +291,7 @@ const PartsQuotation = () => {
   const [customName, setCustomName] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [customQty, setCustomQty] = useState(1);
-  const [customUnit, setCustomUnit] = useState('ชิ้น');
+  const [customUnit, setCustomUnit] = useState(DEFAULT_PART_UNIT);
 
   // Preview state
   const [previewQuotation, setPreviewQuotation] = useState(null);
@@ -346,7 +352,8 @@ const PartsQuotation = () => {
     setActiveTab('create');
 
     try {
-      const prefix = `QTS${getThaiYearMonth(today)}-`;
+      const { yymm } = getThaiYearMonth(today);
+      const prefix = `QTS${yymm}-`;
       const liveNo = await fetchNextDocumentId({
         table: 'quotations_part',
         prefix,
@@ -416,7 +423,7 @@ const PartsQuotation = () => {
         barcode: partCode,
         quantity: 1,
         sellPrice: price,
-        unit: part.unit || 'ชิ้น'
+        unit: part.unit || getRememberedPartUnit(partCode) || DEFAULT_PART_UNIT
       }]);
     }
   };
@@ -432,14 +439,14 @@ const PartsQuotation = () => {
       barcode: 'CUSTOM',
       quantity: Number(customQty) || 1,
       sellPrice: Number(customPrice),
-      unit: customUnit || 'ชิ้น'
+      unit: String(customUnit || DEFAULT_PART_UNIT).trim() || DEFAULT_PART_UNIT
     }]);
 
     // Reset modal fields
     setCustomName('');
     setCustomPrice('');
     setCustomQty(1);
-    setCustomUnit('ชิ้น');
+    setCustomUnit(DEFAULT_PART_UNIT);
     setShowCustomModal(false);
   };
 
@@ -447,6 +454,15 @@ const PartsQuotation = () => {
   const updateItemProp = (idx, prop, val) => {
     const newItems = [...items];
     newItems[idx][prop] = val;
+    if (
+      prop === 'unit' &&
+      newItems[idx]?.productId &&
+      !String(newItems[idx].productId).startsWith('custom-') &&
+      val &&
+      String(val).trim()
+    ) {
+      rememberPartUnit(newItems[idx].productId, String(val).trim());
+    }
     setItems(newItems);
   };
 
@@ -558,7 +574,8 @@ const PartsQuotation = () => {
       }
 
       const initialCandidateId = quotationNo.trim() || generateQuotationNo(quotationDate);
-      const qPrefix = `QTS${getThaiYearMonth(quotationDate)}-`;
+      const { yymm } = getThaiYearMonth(quotationDate);
+      const qPrefix = `QTS${yymm}-`;
 
       let savedId = editId || initialCandidateId;
       if (editId) {
@@ -593,16 +610,16 @@ const PartsQuotation = () => {
           product_name: item.name,
           quantity: Number(item.quantity || 1),
           sell_price: Number(item.sellPrice || 0),
-          unit: item.unit || 'ชิ้น'
+          unit: String(item.unit || DEFAULT_PART_UNIT).trim() || DEFAULT_PART_UNIT
         }));
         const { error: itErr } = await supabase.from('quotation_items_part').insert(itemsPayload);
         if (itErr) throw itErr;
       } else {
-        const { finalId, error: qErr } = await insertWithUniqueIdRetry({
+        const { id: finalId, error: qErr } = await insertWithUniqueIdRetry({
           table: 'quotations_part',
           prefix: qPrefix,
           pad: 3,
-          initialId: initialCandidateId,
+          initialId: initialCandidateId.includes('[object') ? generateQuotationNo(quotationDate) : initialCandidateId,
           localFallbackList: quotationsList,
           buildRow: (id) => ({
             id,
@@ -636,7 +653,7 @@ const PartsQuotation = () => {
           product_name: item.name,
           quantity: Number(item.quantity || 1),
           sell_price: Number(item.sellPrice || 0),
-          unit: item.unit || 'ชิ้น'
+          unit: String(item.unit || DEFAULT_PART_UNIT).trim() || DEFAULT_PART_UNIT
         }));
         const { error: itErr } = await supabase.from('quotation_items_part').insert(itemsPayload);
         if (itErr) throw itErr;
@@ -1166,9 +1183,9 @@ const PartsQuotation = () => {
                     <thead>
                       <tr>
                         <th style={{ width: '5%' }}>#</th>
-                        <th style={{ width: '45%' }}>รายการอะไหล่</th>
-                        <th style={{ width: '15%', textAlign: 'center' }}>จำนวน</th>
-                        <th style={{ width: '10%' }}>หน่วย</th>
+                        <th style={{ width: '41%' }}>รายการอะไหล่</th>
+                        <th style={{ width: '14%', textAlign: 'center' }}>จำนวน</th>
+                        <th style={{ width: '15%', textAlign: 'center' }}>หน่วย</th>
                         <th style={{ width: '15%', textAlign: 'right' }}>ราคา/หน่วย</th>
                         <th style={{ width: '10%' }}></th>
                       </tr>
@@ -1199,12 +1216,12 @@ const PartsQuotation = () => {
                               }}
                             />
                           </td>
-                          <td>
-                            <input 
-                              type="text" 
-                              className="table-unit-input"
+                          <td style={{ textAlign: 'center' }}>
+                            <PartUnitComboBox
                               value={item.unit}
-                              onChange={(e) => updateItemProp(idx, 'unit', e.target.value)}
+                              onChange={(val) => updateItemProp(idx, 'unit', val)}
+                              showLabel={false}
+                              width={90}
                             />
                           </td>
                           <td style={{ textAlign: 'right' }}>
@@ -1437,11 +1454,11 @@ const PartsQuotation = () => {
                 </div>
                 <div className="form-group">
                   <label className="input-label">หน่วย</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
+                  <PartUnitComboBox
                     value={customUnit}
-                    onChange={(e) => setCustomUnit(e.target.value)}
+                    onChange={(val) => setCustomUnit(val)}
+                    showLabel={false}
+                    width="100%"
                   />
                 </div>
               </div>
@@ -1631,7 +1648,7 @@ const PartsQuotationPreviewModal = ({ quotation, store, onClose }) => {
                 <h1 className="q-company-name">{store.name}</h1>
                 <p className="q-company-details">
                   {store.address} <br/>
-                  เลขประจำตัวผู้เสียภาษี: {store.taxId} | โทร: {store.phone}
+                  เลขประจำตัวผู้เสียภาษี: {store.taxId} | โทร. 044-002716 , 085-4957093
                 </p>
               </div>
             </div>
@@ -1720,7 +1737,7 @@ const PartsQuotationPreviewModal = ({ quotation, store, onClose }) => {
                         <td style={{ textAlign: 'center' }}>{item.productId.startsWith('custom-') ? 'CUSTOM' : item.productId}</td>
                         <td className="desc-cell">{item.name}</td>
                         <td style={{ textAlign: 'center' }}>{item.quantity}</td>
-                        <td style={{ textAlign: 'center' }}>{item.unit}</td>
+                        <td style={{ textAlign: 'center' }}>{item.unit || DEFAULT_PART_UNIT}</td>
                         <td style={{ textAlign: 'right' }}>{formatCurrency(priceUnit)}</td>
                         <td style={{ textAlign: 'right' }}>{formatCurrency(amountTotal)}</td>
                       </tr>

@@ -56,7 +56,7 @@ export const promotions = [
 export const storeInfo = {
   name: 'ห้างหุ้นส่วนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.',
   address: 'สำนักงานใหญ่ : 841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000',
-  phone: '044-002716, 084-1844310 (บัญชี) แฟ็ก. 044-248869',
+  phone: '044-002716 , 085-4957093',
   taxId: '0303547004494',
   taxRate: 7,
   branches: [

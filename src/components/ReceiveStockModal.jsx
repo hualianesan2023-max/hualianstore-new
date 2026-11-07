@@ -579,7 +579,7 @@ const ReceiveStockModal = ({ isOpen, onClose, onStockReceived }) => {
           <div class="voucher-header">
             <div>
               <div class="company-name">หจก. หัวเหรียญ อีสาน (HUALIAN ESAN)</div>
-              <div style="font-size: 12px; color: #555;">841/7 หมู่ 5 ต.หนองจะบก อ.เมือง จ.นครราชสีมา 30000 | โทร. 044-002716, 084-1844310</div>
+              <div style="font-size: 12px; color: #555;">841/7 หมู่ 5 ต.หนองจะบก อ.เมือง จ.นครราชสีมา 30000 | โทร. 044-002716 , 085-4957093</div>
             </div>
             <div class="doc-title-badge">
               <div class="doc-title">ใบรับเครื่องจักรและสินค้าเข้าระบบ</div>

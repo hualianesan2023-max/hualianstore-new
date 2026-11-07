@@ -182,3 +182,26 @@ BEGIN
     END;
   END LOOP;
 END $$;
+
+-- 7. Columns for spare part unit of measurement ('ตัว', 'งาน', 'ลิตร', 'กล่อง', 'เส้น', 'เมตร', 'ม้วน', 'แท่ง', 'ใบ', 'ชุด', 'ลูก', etc.)
+ALTER TABLE public.sale_items_part ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'ตัว';
+ALTER TABLE public.parts ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'ตัว';
+ALTER TABLE public.quotation_items_part ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'ตัว';
+
+-- Backfill any unit previously encoded in selected_location ('...||unit:...')
+UPDATE public.sale_items_part
+SET
+  unit = split_part(selected_location, '||unit:', 2),
+  selected_location = split_part(selected_location, '||unit:', 1)
+WHERE selected_location LIKE '%||unit:%';
+
+UPDATE public.sale_items_part
+SET unit = 'ตัว'
+WHERE unit IS NULL OR btrim(unit) = '';
+
+UPDATE public.parts
+SET unit = 'ตัว'
+WHERE unit IS NULL OR btrim(unit) = '';
+
+-- Reload Supabase API schema cache immediately
+NOTIFY pgrst, 'reload schema';

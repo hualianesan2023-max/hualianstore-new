@@ -8,6 +8,7 @@ import { supabase } from '../data/supabaseClient';
 import Receipt from '../components/Receipt';
 import { getPartImageUrl } from '../utils/localImageProvider';
 import { showAlert } from '../utils/alerts';
+import { DEFAULT_PART_UNIT, parsePartItemLocationAndUnit } from '../utils/partUnits';
 import './PartsHistory.css';
 
 // ── Thai Date & Currency Formatters ──
@@ -167,14 +168,16 @@ const PartsHistory = () => {
       // Map sale items grouped by sale_id
       const itemsMap = (itemsData || []).reduce((acc, it) => {
         if (!acc[it.sale_id]) acc[it.sale_id] = [];
+        const { location, unit } = parsePartItemLocationAndUnit(it, DEFAULT_PART_UNIT);
         acc[it.sale_id].push({
           id: it.product_id,
           productId: it.product_id,
           name: it.product_name,
+          unit,
           quantity: Number(it.quantity || 0),
           sellPrice: Number(it.sell_price || 0),
           costPrice: Number(it.cost_price || 0),
-          selectedLocation: it.selected_location || '—',
+          selectedLocation: location,
         });
         return acc;
       }, {});
@@ -783,6 +786,7 @@ const PartsHistory = () => {
             employee: sale.employee || 'หน้าร้าน',
             paymentMethod: sale.paymentMethod || 'cash',
             quantity: qty,
+            unit: it.unit || DEFAULT_PART_UNIT,
             sellPrice,
             costPrice,
             lineTotal,
@@ -803,7 +807,8 @@ const PartsHistory = () => {
     const totalRevenue = selectedPartMovement.reduce((sum, m) => sum + m.lineTotal, 0);
     const totalProfit = selectedPartMovement.reduce((sum, m) => sum + m.profit, 0);
     const orderCount = selectedPartMovement.length;
-    return { totalSold, totalRevenue, totalProfit, orderCount };
+    const primaryUnit = selectedPartMovement[0]?.unit || DEFAULT_PART_UNIT;
+    return { totalSold, totalRevenue, totalProfit, orderCount, primaryUnit };
   }, [selectedPartMovement]);
 
   // Search filtered parts list for the part picker (ค้นหาจาก ไอดี/รหัส และ ชื่อ)
@@ -865,6 +870,7 @@ const PartsHistory = () => {
             code,
             name: matchingPart ? matchingPart.name : name,
             part: matchingPart,
+            unit: it.unit || DEFAULT_PART_UNIT,
             totalQuantity: 0,
             totalRevenue: 0,
             totalProfit: 0,
@@ -872,6 +878,9 @@ const PartsHistory = () => {
         }
 
         const curr = map.get(key);
+        if (it.unit && curr.unit === DEFAULT_PART_UNIT) {
+          curr.unit = it.unit;
+        }
         curr.totalQuantity += qty;
         curr.totalRevenue += revenue;
         curr.totalProfit += revenue - cost;
@@ -907,7 +916,8 @@ const PartsHistory = () => {
       'รหัสอะไหล่',
       'ชื่ออะไหล่',
       'จำนวนที่ขาย',
-      'ราคาขายต่อชิ้น',
+      'หน่วยนับ',
+      'ราคาขายต่อหน่วย',
       'ยอดรวม (บาท)',
       'ต้นทุน (บาท)',
       'กำไร (บาท)',
@@ -923,6 +933,7 @@ const PartsHistory = () => {
         if (!isPart) return;
 
         const qty = Number(it.quantity || 0);
+        const unit = it.unit || DEFAULT_PART_UNIT;
         const sellPrice = Number(it.sellPrice ?? it.sell_price ?? 0);
         const costPrice = Number(it.costPrice ?? it.cost_price ?? 0);
         const lineTotal = qty * sellPrice;
@@ -937,6 +948,7 @@ const PartsHistory = () => {
           `"${(it.productId || it.id || '-').replace(/"/g, '""')}"`,
           `"${(it.name || '-').replace(/"/g, '""')}"`,
           qty,
+          `"${String(unit).replace(/"/g, '""')}"`,
           sellPrice,
           lineTotal,
           costPrice,
@@ -1212,7 +1224,7 @@ const PartsHistory = () => {
                               <div key={idx} style={{ fontSize: '12px', display: 'flex', gap: '6px', alignItems: 'center' }}>
                                 <span style={{ color: '#38bdf8' }}>•</span>
                                 <span style={{ color: '#cbd5e1' }}>{it.name}</span>
-                                <span style={{ color: '#f59e0b', fontWeight: '600' }}>x{it.quantity}</span>
+                                <span style={{ color: '#f59e0b', fontWeight: '600' }}>x{it.quantity} {it.unit || DEFAULT_PART_UNIT}</span>
                                 <span style={{ color: '#94a3b8', fontSize: '11px' }}>
                                   (฿{formatCurrency(it.sellPrice ?? it.sell_price)})
                                 </span>
@@ -1518,7 +1530,7 @@ const PartsHistory = () => {
                 <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '12px 14px' }}>
                   <div style={{ fontSize: '11.5px', color: '#94a3b8' }}>ขายไปแล้วทั้งหมด</div>
                   <div style={{ fontSize: '1.3rem', fontWeight: '700', color: '#38bdf8' }}>
-                    {selectedPartStats.totalSold} ชิ้น
+                    {selectedPartStats.totalSold} {selectedPartStats.primaryUnit}
                   </div>
                 </div>
                 <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '12px 14px' }}>
@@ -1556,7 +1568,7 @@ const PartsHistory = () => {
                         <th>ขายให้ใคร (ลูกค้า)</th>
                         <th>เบอร์โทร</th>
                         <th style={{ textAlign: 'center' }}>จำนวนที่ขาย</th>
-                        <th style={{ textAlign: 'right' }}>ราคาขาย/ชิ้น</th>
+                        <th style={{ textAlign: 'right' }}>ราคาขาย/หน่วย</th>
                         <th style={{ textAlign: 'right' }}>ยอดรวม</th>
                         <th style={{ textAlign: 'right' }}>กำไร</th>
                         <th>ผู้ขาย</th>
@@ -1588,7 +1600,7 @@ const PartsHistory = () => {
                           </td>
 
                           <td style={{ textAlign: 'center', fontWeight: '700', color: '#38bdf8' }}>
-                            {m.quantity} ชิ้น
+                            {m.quantity} {m.unit || DEFAULT_PART_UNIT}
                           </td>
 
                           <td style={{ textAlign: 'right' }}>
@@ -2038,7 +2050,7 @@ const PartsHistory = () => {
                         </td>
 
                         <td style={{ textAlign: 'center', fontWeight: '700', color: '#38bdf8', fontSize: '14px' }}>
-                          {item.totalQuantity} ชิ้น
+                          {item.totalQuantity} {item.unit || DEFAULT_PART_UNIT}
                         </td>
 
                         <td style={{ textAlign: 'right', fontWeight: '700', color: '#10b981' }}>
