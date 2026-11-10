@@ -199,17 +199,29 @@ function storeReducer(state, action) {
     }
 
     case ACTIONS.SET_SALES:
-      return { ...state, sales: deduplicateById(action.payload) };
+      return {
+        ...state,
+        sales: deduplicateById(action.payload).sort(
+          (a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '')
+        ),
+      };
 
     case ACTIONS.ADD_SALE: {
       const exists = state.sales.some((s) => s.id === action.payload.id);
       let newSales = state.sales;
       if (exists) {
-        newSales = state.sales.map((s) =>
-          s.id === action.payload.id ? { ...s, ...action.payload } : s
-        );
+        newSales = state.sales.map((s) => {
+          if (s.id !== action.payload.id) return s;
+          const mergedItems =
+            Array.isArray(action.payload.items) && action.payload.items.length > 0
+              ? action.payload.items
+              : s.items || [];
+          return { ...s, ...action.payload, items: mergedItems };
+        });
       } else {
-        newSales = [action.payload, ...state.sales];
+        newSales = [action.payload, ...state.sales].sort(
+          (a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '')
+        );
       }
       if (action.skipStockDeduct) {
         return { ...state, sales: newSales };
@@ -505,19 +517,34 @@ function storeReducer(state, action) {
       };
 
     case ACTIONS.SET_QUOTATIONS:
-      return { ...state, quotations: deduplicateById(action.payload) };
+      return {
+        ...state,
+        quotations: deduplicateById(action.payload).sort(
+          (a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '')
+        ),
+      };
 
     case ACTIONS.ADD_QUOTATION: {
       const exists = state.quotations.some((q) => q.id === action.payload.id);
       if (exists) {
         return {
           ...state,
-          quotations: state.quotations.map((q) =>
-            q.id === action.payload.id ? { ...q, ...action.payload } : q
-          ),
+          quotations: state.quotations.map((q) => {
+            if (q.id !== action.payload.id) return q;
+            const mergedItems =
+              Array.isArray(action.payload.items) && action.payload.items.length > 0
+                ? action.payload.items
+                : q.items || [];
+            return { ...q, ...action.payload, items: mergedItems };
+          }),
         };
       }
-      return { ...state, quotations: [action.payload, ...state.quotations] };
+      return {
+        ...state,
+        quotations: [action.payload, ...state.quotations].sort(
+          (a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '')
+        ),
+      };
     }
 
     case ACTIONS.UPDATE_QUOTATION:
@@ -667,7 +694,8 @@ export function StoreProvider({ children }) {
       const { data: dbProducts, error: prodErr } = await supabase
         .from('products')
         .select('*')
-        .order('id', { ascending: true });
+        .order('id', { ascending: true })
+        .range(0, 9999);
       if (prodErr) throw prodErr;
 
       // 2. Fetch categories
@@ -681,7 +709,8 @@ export function StoreProvider({ children }) {
       const { data: dbCustomers, error: custErr } = await supabase
         .from('customers')
         .select('*')
-        .order('id', { ascending: true });
+        .order('id', { ascending: true })
+        .range(0, 9999);
       if (custErr) throw custErr;
 
       // 4. Fetch promotions
@@ -704,26 +733,29 @@ export function StoreProvider({ children }) {
         .from('sales')
         .select('*')
         .order('date', { ascending: false })
-        .limit(500);
+        .range(0, 4999);
       if (salesErr) throw salesErr;
 
       // 7. Fetch sale_items
       const { data: dbSaleItems, error: itemsErr } = await supabase
         .from('sale_items')
-        .select('*');
+        .select('*')
+        .range(0, 9999);
       if (itemsErr) throw itemsErr;
 
       // 8. Fetch quotations
       const { data: dbQuotations, error: quotErr } = await supabase
         .from('quotations')
         .select('*')
-        .order('date', { ascending: false });
+        .order('date', { ascending: false })
+        .range(0, 4999);
       if (quotErr) throw quotErr;
 
       // 9. Fetch quotation_items
       const { data: dbQuotationItems, error: quotItemsErr } = await supabase
         .from('quotation_items')
-        .select('*');
+        .select('*')
+        .range(0, 9999);
       if (quotItemsErr) throw quotItemsErr;
 
       // Map products (Snake Case -> Camel Case)
@@ -979,7 +1011,8 @@ export function StoreProvider({ children }) {
         const { data: dbCustomerRepairs, error: repErr } = await supabase
           .from('customer_repairs')
           .select('*')
-          .order('id', { ascending: false });
+          .order('id', { ascending: false })
+          .range(0, 9999);
         if (!repErr && Array.isArray(dbCustomerRepairs)) {
           const mappedCustomerRepairs = dbCustomerRepairs.map(r => ({
             id: r.id,
@@ -1011,7 +1044,8 @@ export function StoreProvider({ children }) {
         const { data: dbShopRepairs, error: shopErr } = await supabase
           .from('shop_repairs')
           .select('*')
-          .order('id', { ascending: false });
+          .order('id', { ascending: false })
+          .range(0, 9999);
         if (!shopErr && Array.isArray(dbShopRepairs)) {
           const mappedShopRepairs = dbShopRepairs.map(r => ({
             id: r.id,
@@ -1041,7 +1075,8 @@ export function StoreProvider({ children }) {
         const { data: dbCustomerDeliveries, error: delivErr } = await supabase
           .from('customer_deliveries')
           .select('*')
-          .order('id', { ascending: false });
+          .order('id', { ascending: false })
+          .range(0, 9999);
         if (!delivErr && Array.isArray(dbCustomerDeliveries)) {
           const mappedCustomerDeliveries = dbCustomerDeliveries.map(r => ({
             id: r.id,
@@ -1087,10 +1122,232 @@ export function StoreProvider({ children }) {
     }
   }, [state.currentUser, state.customerRepairs, state.shopRepairs, state.customerDeliveries]);
 
-  // Load all initial database records on mount
+  // Lightweight sync for all numbered documents across 7-8 terminals (works even if Supabase Realtime is not enabled)
+  const refreshSales = useCallback(async () => {
+    try {
+      const [
+        { data: dbSales, error: salesErr },
+        { data: dbSaleItems, error: itemsErr },
+        { data: dbQuotations, error: quotErr },
+        { data: dbQuotationItems, error: quotItemsErr },
+        { data: dbCustomers, error: custErr },
+        { data: dbCustomerRepairs, error: repErr },
+        { data: dbShopRepairs, error: shopErr },
+        { data: dbCustomerDeliveries, error: delivErr },
+      ] = await Promise.all([
+        supabase.from('sales').select('*').order('date', { ascending: false }).range(0, 4999),
+        supabase.from('sale_items').select('*').range(0, 9999),
+        supabase.from('quotations').select('*').order('date', { ascending: false }).range(0, 4999),
+        supabase.from('quotation_items').select('*').range(0, 9999),
+        supabase.from('customers').select('*').order('id', { ascending: true }).range(0, 9999),
+        supabase.from('customer_repairs').select('*').order('id', { ascending: false }).range(0, 9999),
+        supabase.from('shop_repairs').select('*').order('id', { ascending: false }).range(0, 9999),
+        supabase.from('customer_deliveries').select('*').order('id', { ascending: false }).range(0, 9999),
+      ]);
+
+      if (!salesErr && !itemsErr && Array.isArray(dbSales)) {
+        const itemsBySaleId = (dbSaleItems || []).reduce((acc, item) => {
+          if (!acc[item.sale_id]) acc[item.sale_id] = [];
+          acc[item.sale_id].push({
+            id: item.product_id,
+            productId: item.product_id,
+            name: item.product_name,
+            sellPrice: Number(item.sell_price || 0),
+            costPrice: Number(item.cost_price || 0),
+            quantity: Number(item.quantity || 0),
+            selectedLocation: item.selected_location,
+          });
+          return acc;
+        }, {});
+
+        const mappedSales = dbSales.map((sale) => ({
+          id: sale.id,
+          date: sale.date,
+          customer: sale.customer_id
+            ? {
+                id: sale.customer_id,
+                name: sale.customer_name,
+                phone: sale.customer_phone,
+                address: sale.customer_address,
+                taxId: sale.customer_tax_id,
+              }
+            : {
+                name: sale.customer_name,
+                phone: sale.customer_phone,
+                address: sale.customer_address,
+                taxId: sale.customer_tax_id,
+              },
+          employee: sale.salesperson,
+          paymentMethod: sale.payment_method,
+          discountCode: sale.discount_code,
+          discountAmount: Number(sale.discount_amount || 0),
+          subtotal: Number(sale.subtotal || 0),
+          tax: Number(sale.tax || 0),
+          shippingCost: Number(sale.shipping_cost || 0),
+          total: Number(sale.total || 0),
+          cashReceived: Number(sale.cash_received || 0),
+          change: Number(sale.change || 0),
+          applyVat: !!sale.apply_vat,
+          isVatInclusive: !!sale.is_vat_inclusive,
+          items: itemsBySaleId[sale.id] || [],
+        }));
+
+        dispatch({ type: ACTIONS.SET_SALES, payload: mappedSales });
+      }
+
+      if (!quotErr && !quotItemsErr && Array.isArray(dbQuotations)) {
+        const itemsByQuotationId = (dbQuotationItems || []).reduce((acc, item) => {
+          if (!acc[item.quotation_id]) acc[item.quotation_id] = [];
+          acc[item.quotation_id].push({
+            productId: item.product_id,
+            name: item.product_name,
+            quantity: Number(item.quantity || 1),
+            sellPrice: Number(item.sell_price || 0),
+            unit: item.unit || 'เครื่อง',
+          });
+          return acc;
+        }, {});
+
+        const mappedQuotations = dbQuotations.map((q) => ({
+          id: q.id,
+          date: q.date,
+          customerType: q.customer_type || 'general',
+          customerId: q.customer_id,
+          customerName: q.customer_name,
+          customerPhone: q.customer_phone || '',
+          customerAddress: q.customer_address || '',
+          customerTaxId: q.customer_tax_id || '',
+          companyBranch: q.company_branch || 'สำนักงานใหญ่',
+          validityDays: q.validity_days || '30 วัน',
+          deliveryDays: q.delivery_days || '7 วัน',
+          paymentTerms: q.payment_terms || 'โอนเงินเข้าบัญชี',
+          salesperson: q.salesperson || '',
+          discountAmount: Number(q.discount_amount || 0),
+          shippingCost: Number(q.shipping_cost || 0),
+          installationCost: Number(q.installation_cost || 0),
+          vatType: q.vat_type || 'inclusive',
+          subtotal: Number(q.subtotal || 0),
+          tax: Number(q.tax || 0),
+          total: Number(q.total || 0),
+          items: itemsByQuotationId[q.id] || [],
+        }));
+
+        dispatch({ type: ACTIONS.SET_QUOTATIONS, payload: mappedQuotations });
+      }
+
+      if (!custErr && Array.isArray(dbCustomers) && dbCustomers.length > 0) {
+        const mappedCustomers = dbCustomers.map((row) => {
+          const nameLower = (row.name || '').toLowerCase();
+          const cleanTax = (row.tax_id || '').replace(/-/g, '').trim();
+          const isComp =
+            nameLower.includes('บริษัท') ||
+            nameLower.includes('บจก') ||
+            nameLower.includes('หจก') ||
+            nameLower.includes('ห้างหุ้นส่วน') ||
+            nameLower.includes('จำกัด') ||
+            nameLower.includes('co.,ltd') ||
+            nameLower.includes('corp') ||
+            (cleanTax.length === 13 && cleanTax !== '-');
+          return {
+            id: row.id,
+            name: row.name,
+            phone: row.phone || '-',
+            address: row.address || '-',
+            taxId: row.tax_id || '-',
+            type: isComp ? 'company' : 'general',
+          };
+        });
+        dispatch({ type: ACTIONS.SET_CUSTOMERS, payload: mappedCustomers });
+      }
+
+      if (!repErr && Array.isArray(dbCustomerRepairs)) {
+        dispatch({
+          type: ACTIONS.SET_CUSTOMER_REPAIRS,
+          payload: dbCustomerRepairs.map((r) => ({
+            id: r.id,
+            date: r.date,
+            customerName: r.customer_name,
+            customerPhone: r.customer_phone || '',
+            customerAddress: r.customer_address || '',
+            province: r.province || null,
+            locationUrl: r.location_url || '',
+            appointmentDate: r.appointment_date || '',
+            machineModel: r.machine_model,
+            symptoms: r.symptoms || '',
+            technician: r.technician || '',
+            status: r.status || 'รอนัดวัน',
+            estimatedCost: r.estimated_cost,
+            actualCost: r.actual_cost,
+            notes: r.notes || '',
+          })),
+        });
+      }
+
+      if (!shopErr && Array.isArray(dbShopRepairs)) {
+        dispatch({
+          type: ACTIONS.SET_SHOP_REPAIRS,
+          payload: dbShopRepairs.map((r) => ({
+            id: r.id,
+            date: r.date,
+            customerName: r.customer_name,
+            customerPhone: r.customer_phone || '',
+            customerAddress: r.customer_address || '',
+            province: r.province || null,
+            machineModel: r.machine_model,
+            symptoms: r.symptoms || '',
+            technician: r.technician || '',
+            status: r.status || 'รอนัดวัน',
+            estimatedCost: r.estimated_cost,
+            actualCost: r.actual_cost,
+            notes: r.notes || '',
+          })),
+        });
+      }
+
+      if (!delivErr && Array.isArray(dbCustomerDeliveries)) {
+        dispatch({
+          type: ACTIONS.SET_CUSTOMER_DELIVERIES,
+          payload: dbCustomerDeliveries.map((r) => ({
+            id: r.id,
+            date: r.date,
+            customerName: r.customer_name,
+            customerPhone: r.customer_phone || '',
+            customerAddress: r.customer_address || '',
+            province: r.province || null,
+            locationUrl: r.location_url || '',
+            appointmentDate: r.appointment_date || '',
+            machineModel: r.machine_model,
+            symptoms: r.symptoms || '',
+            technician: r.technician || '',
+            status: r.status || 'รอนัดวัน',
+            estimatedCost: r.estimated_cost,
+            actualCost: r.actual_cost,
+            notes: r.notes || '',
+          })),
+        });
+      }
+    } catch (err) {
+      console.warn('refreshSales warning:', err);
+    }
+  }, []);
+
+  // Load all initial database records on mount & keep sales synced across machines
   useEffect(() => {
     refreshData();
-  }, [refreshData]);
+
+    const handleFocus = () => {
+      refreshSales();
+    };
+    window.addEventListener('focus', handleFocus);
+    const intervalId = setInterval(() => {
+      refreshSales();
+    }, 20000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(intervalId);
+    };
+  }, [refreshData, refreshSales]);
 
   // Realtime subscription for Supabase tables
   useEffect(() => {
@@ -1477,6 +1734,9 @@ export function StoreProvider({ children }) {
             dispatch({ type: ACTIONS.DELETE_QUOTATION, payload: payload.old.id });
           } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             try {
+              if (payload.eventType === 'INSERT') {
+                await new Promise((r) => setTimeout(r, 300));
+              }
               const { data: dbItems } = await supabase
                 .from('quotation_items')
                 .select('*')
@@ -1534,13 +1794,25 @@ export function StoreProvider({ children }) {
     try {
       let success = true;
 
-      // 1. Instantly update local React UI state for real-time responsiveness
-      dispatch(action);
+      // 1. Update local React UI state immediately ONLY for non-ID-allocated actions.
+      // All ID-allocated ADD_* actions dispatch AFTER Supabase confirms the true unique ID,
+      // preventing ghost records on error and preventing DELETE_* from ever wiping another terminal's colliding record.
+      const DEFERRED_ADD_ACTIONS = new Set([
+        ACTIONS.ADD_PRODUCT,
+        ACTIONS.ADD_SALE,
+        ACTIONS.ADD_CUSTOMER,
+        ACTIONS.ADD_QUOTATION,
+        ACTIONS.ADD_CUSTOMER_REPAIR,
+        ACTIONS.ADD_SHOP_REPAIR,
+        ACTIONS.ADD_CUSTOMER_DELIVERY,
+      ]);
+      if (!DEFERRED_ADD_ACTIONS.has(action.type)) {
+        dispatch(action);
+      }
 
       // 2. Persist to Supabase Database
       if (action.type === ACTIONS.ADD_PRODUCT) {
         const p = action.payload;
-        const originalId = p.id;
         const prefixMatch = String(p.id || '').match(/^([A-Za-z]+-)(\d+)$/);
         if (prefixMatch) {
           const { success: insOk, id: finalId, error } = await insertWithUniqueIdRetry({
@@ -1567,10 +1839,9 @@ export function StoreProvider({ children }) {
             }),
           });
           success = insOk;
-          if (insOk && finalId && finalId !== originalId) {
+          if (insOk && finalId) {
             p.id = finalId;
             p.barcode = finalId;
-            dispatch({ type: ACTIONS.DELETE_PRODUCT, payload: originalId });
             dispatch({ type: ACTIONS.ADD_PRODUCT, payload: { ...p, id: finalId, barcode: finalId } });
           }
           if (error) console.error('Add product error:', error);
@@ -1592,7 +1863,11 @@ export function StoreProvider({ children }) {
             is_popular: !!p.isPopular
           });
           success = !error;
-          if (error) console.error('Add product error:', error);
+          if (!error) {
+            dispatch({ type: ACTIONS.ADD_PRODUCT, payload: p });
+          } else {
+            console.error('Add product error:', error);
+          }
         }
       } 
       else if (action.type === ACTIONS.UPDATE_PRODUCT) {
@@ -1692,15 +1967,19 @@ export function StoreProvider({ children }) {
 
         if (!saleInsOk || saleErr) {
           console.error('Insert sale error:', saleErr);
+          Swal.fire({
+            title: 'บันทึกบิลไม่สำเร็จ',
+            text: 'ไม่สามารถบันทึกข้อมูลบิลลงฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง: ' + (saleErr?.message || JSON.stringify(saleErr)),
+            icon: 'error',
+            confirmButtonText: 'ตกลง',
+          });
           success = false;
         } else {
-          if (finalSaleId && finalSaleId !== originalSaleId) {
-            s.id = finalSaleId;
-            dispatch({ type: ACTIONS.DELETE_SALE, payload: originalSaleId, skipStockRestore: true });
-            dispatch({ type: ACTIONS.ADD_SALE, payload: { ...s, id: finalSaleId }, skipStockDeduct: true });
-          }
+          // Mutate s.id to the guaranteed unique ID from Supabase & update local state once
+          s.id = finalSaleId;
+          dispatch({ type: ACTIONS.ADD_SALE, payload: { ...s, id: finalSaleId } });
 
-          // 2. Loop items: deduct stock atomically via Compare-And-Swap + insert sale_items
+          // 2. Deduct stock atomically via Compare-And-Swap + batch-insert sale_items
           for (const item of s.items) {
             const loc = item.selectedLocation;
             const qty = Number(item.quantity);
@@ -1715,24 +1994,26 @@ export function StoreProvider({ children }) {
                 console.error('Atomic deduct stock error:', updateStockErr);
               }
             }
+          }
 
-            // Insert sale item with guaranteed unique finalSaleId
-            const { error: itemErr } = await supabase.from('sale_items').insert({
+          if (Array.isArray(s.items) && s.items.length > 0) {
+            const saleItemsPayload = s.items.map((item) => ({
               sale_id: finalSaleId,
               product_id: item.productId,
               product_name: item.name,
-              quantity: qty,
+              quantity: Number(item.quantity),
               cost_price: Number(item.costPrice || 0),
               sell_price: Number(item.sellPrice || 0),
-              selected_location: loc
-            });
-
-            if (itemErr) {
-              console.error('Insert sale item error:', itemErr);
-              success = false;
-              break;
+              selected_location: item.selectedLocation,
+            }));
+            const { error: batchErr } = await supabase.from('sale_items').insert(saleItemsPayload);
+            if (batchErr) {
+              console.error('Insert sale items batch error:', batchErr);
             }
           }
+
+          // 3. Re-sync sales from Supabase so any bills created concurrently by other terminals appear immediately
+          refreshSales();
         }
       } 
       else if (action.type === ACTIONS.UPDATE_SALE) {
@@ -1760,6 +2041,27 @@ export function StoreProvider({ children }) {
           apply_vat: s.applyVat !== undefined ? !!s.applyVat : true,
           is_vat_inclusive: s.isVatInclusive !== undefined ? !!s.isVatInclusive : true
         }).eq('id', s.id);
+
+        if (!error && Array.isArray(s.items) && s.items.length > 0) {
+          try {
+            await supabase.from('sale_items').delete().eq('sale_id', s.id);
+            const itemsToInsert = s.items.map((it) => ({
+              sale_id: s.id,
+              product_id: it.productId || it.id || null,
+              product_name: it.name || it.productName || '',
+              quantity: Number(it.quantity || 1),
+              cost_price: Number(it.costPrice || 0),
+              sell_price: Number(it.sellPrice ?? it.price ?? 0),
+              selected_location: it.selectedLocation || 'หน้าร้าน',
+            }));
+            const { error: insErr } = await supabase.from('sale_items').insert(itemsToInsert);
+            if (insErr) {
+              console.warn('Insert sale_items on update warning:', insErr);
+            }
+          } catch (itemErr) {
+            console.error('Error updating sale_items:', itemErr);
+          }
+        }
 
         success = !error;
         if (error) {
@@ -1818,7 +2120,6 @@ export function StoreProvider({ children }) {
       }
       else if (action.type === ACTIONS.ADD_CUSTOMER) {
         const c = action.payload;
-        const originalCustId = c.id;
         const {
           success: custOk,
           id: finalCustId,
@@ -1838,9 +2139,8 @@ export function StoreProvider({ children }) {
           }),
         });
         success = custOk;
-        if (custOk && finalCustId && finalCustId !== originalCustId) {
+        if (custOk && finalCustId) {
           c.id = finalCustId;
-          dispatch({ type: ACTIONS.DELETE_CUSTOMER, payload: originalCustId });
           dispatch({ type: ACTIONS.ADD_CUSTOMER, payload: { ...c, id: finalCustId } });
         }
         if (error) {
@@ -2089,32 +2389,30 @@ export function StoreProvider({ children }) {
           });
           success = false;
         } else {
-          if (finalQId && finalQId !== originalQId) {
-            q.id = finalQId;
-            dispatch({ type: ACTIONS.DELETE_QUOTATION, payload: originalQId });
-            dispatch({ type: ACTIONS.ADD_QUOTATION, payload: { ...q, id: finalQId } });
-          }
-          for (const item of q.items || []) {
-            const { error: itemErr } = await supabase.from('quotation_items').insert({
+          q.id = finalQId;
+          dispatch({ type: ACTIONS.ADD_QUOTATION, payload: { ...q, id: finalQId } });
+          if (Array.isArray(q.items) && q.items.length > 0) {
+            const quotItemsPayload = q.items.map((item) => ({
               quotation_id: finalQId,
               product_id: item.productId,
               product_name: item.name,
               quantity: Number(item.quantity || 1),
               sell_price: Number(item.sellPrice || 0),
-              unit: item.unit || 'เครื่อง'
-            });
+              unit: item.unit || 'เครื่อง',
+            }));
+            const { error: itemErr } = await supabase.from('quotation_items').insert(quotItemsPayload);
             if (itemErr) {
               console.error('Add quotation item error:', itemErr);
               Swal.fire({
                 title: 'เกิดข้อผิดพลาดในการบันทึกสินค้า',
                 text: itemErr.message || JSON.stringify(itemErr),
                 icon: 'error',
-                confirmButtonText: 'ตกลง'
+                confirmButtonText: 'ตกลง',
               });
               success = false;
-              break;
             }
           }
+          refreshSales();
         }
       }
       else if (action.type === ACTIONS.UPDATE_QUOTATION) {
@@ -2185,7 +2483,6 @@ export function StoreProvider({ children }) {
       // ── Customer Repair CRUD ──────────────────────────────────
       else if (action.type === ACTIONS.ADD_CUSTOMER_REPAIR) {
         const r = action.payload;
-        const originalId = r.id;
         const { yymm } = getThaiYearMonth(r.date);
         const {
           success: insOk,
@@ -2215,11 +2512,9 @@ export function StoreProvider({ children }) {
             notes: r.notes || null,
           }),
         });
-        if (insOk && finalId && finalId !== originalId) {
-          r.id = finalId;
-          dispatch({ type: ACTIONS.DELETE_CUSTOMER_REPAIR, payload: originalId });
-          dispatch({ type: ACTIONS.ADD_CUSTOMER_REPAIR, payload: { ...r, id: finalId } });
-        }
+        const assignedId = (insOk && finalId) ? finalId : r.id;
+        r.id = assignedId;
+        dispatch({ type: ACTIONS.ADD_CUSTOMER_REPAIR, payload: { ...r, id: assignedId } });
         if (error) {
           console.error('Add customer repair Supabase error:', error);
           Swal.fire({
@@ -2228,6 +2523,8 @@ export function StoreProvider({ children }) {
             icon: 'warning',
             confirmButtonText: 'ตกลง'
           });
+        } else {
+          refreshSales();
         }
       }
       else if (action.type === ACTIONS.UPDATE_CUSTOMER_REPAIR) {
@@ -2265,7 +2562,6 @@ export function StoreProvider({ children }) {
       // ── Shop Repair CRUD ──────────────────────────────────────
       else if (action.type === ACTIONS.ADD_SHOP_REPAIR) {
         const r = action.payload;
-        const originalId = r.id;
         const { yymm } = getThaiYearMonth(r.date);
         const {
           success: insOk,
@@ -2293,11 +2589,9 @@ export function StoreProvider({ children }) {
             notes: r.notes || null,
           }),
         });
-        if (insOk && finalId && finalId !== originalId) {
-          r.id = finalId;
-          dispatch({ type: ACTIONS.DELETE_SHOP_REPAIR, payload: originalId });
-          dispatch({ type: ACTIONS.ADD_SHOP_REPAIR, payload: { ...r, id: finalId } });
-        }
+        const assignedId = (insOk && finalId) ? finalId : r.id;
+        r.id = assignedId;
+        dispatch({ type: ACTIONS.ADD_SHOP_REPAIR, payload: { ...r, id: assignedId } });
         if (error) {
           console.error('Add shop repair Supabase error:', error);
           Swal.fire({
@@ -2306,6 +2600,8 @@ export function StoreProvider({ children }) {
             icon: 'warning',
             confirmButtonText: 'ตกลง'
           });
+        } else {
+          refreshSales();
         }
       }
       else if (action.type === ACTIONS.UPDATE_SHOP_REPAIR) {
@@ -2341,7 +2637,6 @@ export function StoreProvider({ children }) {
       // ── Customer Delivery CRUD ────────────────────────────────
       else if (action.type === ACTIONS.ADD_CUSTOMER_DELIVERY) {
         const r = action.payload;
-        const originalId = r.id;
         const { yymm } = getThaiYearMonth(r.date);
         const {
           success: insOk,
@@ -2371,11 +2666,9 @@ export function StoreProvider({ children }) {
             notes: r.notes || null,
           }),
         });
-        if (insOk && finalId && finalId !== originalId) {
-          r.id = finalId;
-          dispatch({ type: ACTIONS.DELETE_CUSTOMER_DELIVERY, payload: originalId });
-          dispatch({ type: ACTIONS.ADD_CUSTOMER_DELIVERY, payload: { ...r, id: finalId } });
-        }
+        const assignedId = (insOk && finalId) ? finalId : r.id;
+        r.id = assignedId;
+        dispatch({ type: ACTIONS.ADD_CUSTOMER_DELIVERY, payload: { ...r, id: assignedId } });
         if (error) {
           console.error('Add customer delivery Supabase error:', error);
           Swal.fire({
@@ -2384,6 +2677,8 @@ export function StoreProvider({ children }) {
             icon: 'warning',
             confirmButtonText: 'ตกลง'
           });
+        } else {
+          refreshSales();
         }
       }
       else if (action.type === ACTIONS.UPDATE_CUSTOMER_DELIVERY) {
@@ -2427,7 +2722,7 @@ export function StoreProvider({ children }) {
       console.error('Database error executing dispatch action:', action.type, err.message);
       return false;
     }
-  }, [refreshData]);
+  }, [refreshData, refreshSales]);
 
   // ─── Helpers ───
   const getProductById = useCallback((id) => state.products.find((p) => p.id === id) || null, [state.products]);
@@ -2516,6 +2811,8 @@ export function StoreProvider({ children }) {
     () => ({
       state,
       dispatch: asyncDispatch, // Inject asyncDispatch middleware
+      refreshData,
+      refreshSales,
       getProductById,
       getProductByBarcode,
       getLowStockProducts,
@@ -2532,6 +2829,8 @@ export function StoreProvider({ children }) {
     [
       state,
       asyncDispatch,
+      refreshData,
+      refreshSales,
       getProductById,
       getProductByBarcode,
       getLowStockProducts,

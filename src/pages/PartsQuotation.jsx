@@ -138,18 +138,20 @@ const PartsQuotation = () => {
   const [isLoadingParts, setIsLoadingParts] = useState(true);
 
   // Fetch parts quotations from quotations_part & quotation_items_part
-  const fetchQuotations = useCallback(async () => {
-    setIsLoadingQuotations(true);
+  const fetchQuotations = useCallback(async (silent = false) => {
+    if (!silent) setIsLoadingQuotations(true);
     try {
       const { data: qData, error: qErr } = await supabase
         .from('quotations_part')
         .select('*')
-        .order('date', { ascending: false });
+        .order('date', { ascending: false })
+        .range(0, 9999);
       if (qErr) throw qErr;
 
       const { data: itemData, error: itemErr } = await supabase
         .from('quotation_items_part')
-        .select('*');
+        .select('*')
+        .range(0, 9999);
       if (itemErr) throw itemErr;
 
       const itemsByQId = (itemData || []).reduce((acc, it) => {
@@ -219,6 +221,10 @@ const PartsQuotation = () => {
     fetchParts();
     fetchQuotations();
 
+    const handleFocus = () => fetchQuotations(true);
+    window.addEventListener('focus', handleFocus);
+    const intervalId = setInterval(() => fetchQuotations(true), 20000);
+
     const partsChannel = supabase
       .channel('parts_quotation_realtime')
       .on(
@@ -232,19 +238,21 @@ const PartsQuotation = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'quotations_part' },
         () => {
-          fetchQuotations();
+          fetchQuotations(true);
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'quotation_items_part' },
         () => {
-          fetchQuotations();
+          fetchQuotations(true);
         }
       )
       .subscribe();
 
     return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(intervalId);
       supabase.removeChannel(partsChannel);
     };
   }, [fetchParts, fetchQuotations]);
@@ -369,6 +377,21 @@ const PartsQuotation = () => {
   useEffect(() => {
     if (activeTab === 'create' && !editId && quotationDate) {
       setQuotationNo(generateQuotationNo(quotationDate));
+      let cancelled = false;
+      const { yymm } = getThaiYearMonth(quotationDate);
+      fetchNextDocumentId({
+        table: 'quotations_part',
+        prefix: `QTS${yymm}-`,
+        pad: 3,
+        localFallbackList: quotationsList,
+      })
+        .then((liveNo) => {
+          if (!cancelled && liveNo) setQuotationNo(liveNo);
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
     }
   }, [quotationsList, activeTab, editId, quotationDate]);
 
@@ -657,16 +680,6 @@ const PartsQuotation = () => {
         }));
         const { error: itErr } = await supabase.from('quotation_items_part').insert(itemsPayload);
         if (itErr) throw itErr;
-      }
-
-      // Store sequence number in localStorage
-      const dashIdx = savedId.lastIndexOf('-');
-      if (dashIdx !== -1) {
-        const prefix = savedId.slice(0, dashIdx + 1);
-        const suffix = savedId.slice(dashIdx + 1);
-        const seqNum = parseInt(suffix, 10) || 0;
-        const yyMm = prefix.replace('QTS', '').replace('-', '');
-        localStorage.setItem(`last_parts_quotation_seq_${yyMm}`, String(seqNum));
       }
 
       await fetchQuotations();

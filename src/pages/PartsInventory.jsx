@@ -287,7 +287,12 @@ const PartsInventory = () => {
           column: 'part_code',
           initialId: finalPartCode,
           localFallbackList: parts,
-          customNextIdFn: ({ triedIds }) => fetchNextPartCode({ localParts: parts, triedCodes: triedIds }),
+          customNextIdFn: ({ attempt, triedIds }) => {
+            if (attempt === 0 && finalPartCode && !/^HL-\d+$/i.test(finalPartCode)) {
+              return finalPartCode;
+            }
+            return fetchNextPartCode({ localParts: parts, triedCodes: triedIds });
+          },
           buildRow: (code) => ({
             ...buildPayload(code),
             created_at: new Date().toISOString(),

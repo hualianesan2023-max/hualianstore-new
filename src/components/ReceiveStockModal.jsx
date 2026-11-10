@@ -3,11 +3,115 @@ import { useStore } from '../data/store';
 import { categories as categoryList } from '../data/mockData';
 import { showAlert, showConfirm } from '../utils/alerts';
 import Swal from 'sweetalert2';
+import { supabase } from '../data/supabaseClient';
 import './ReceiveStockModal.css';
 
 const STORAGE_INBOUND_KEY = 'hualian_inbound_records';
 
-// Load stored inbound history
+// Data mapping helpers between Supabase and JS
+export const mapDbInboundToJs = (row) => {
+  return {
+    id: row.id,
+    date: row.date,
+    displayDate: row.display_date || (row.date ? row.date.replace('T', ' ').slice(0, 16) : '-'),
+    supplier: row.supplier || 'โรงงานนำเข้า HUALIAN',
+    refDocNo: row.ref_doc_no || '-',
+    receiver: row.receiver || 'ผู้ดูแลระบบ',
+    notes: row.notes || '',
+    totalItems: Number(row.total_items ?? (row.items?.length || 0)),
+    totalUnits: Number(row.total_units || 0),
+    totalCostValue: Number(row.total_cost_value || 0),
+    items: Array.isArray(row.items) ? row.items : [],
+  };
+};
+
+export const mapJsToDbInbound = (record) => {
+  return {
+    id: record.id,
+    date: record.date || new Date().toISOString(),
+    display_date: record.displayDate || '',
+    supplier: record.supplier || 'โรงงานนำเข้า HUALIAN',
+    ref_doc_no: record.refDocNo || '-',
+    receiver: record.receiver || 'ผู้ดูแลระบบ',
+    notes: record.notes || '',
+    total_items: Number(record.totalItems ?? (record.items?.length || 0)),
+    total_units: Number(record.totalUnits || 0),
+    total_cost_value: Number(record.totalCostValue || 0),
+    items: record.items || [],
+  };
+};
+
+// Sync local records that aren't on Supabase yet
+export const syncLocalInboundsToSupabase = async (records = []) => {
+  if (!records || records.length === 0) return;
+  try {
+    for (const rec of records) {
+      if (!rec || !rec.id) continue;
+      const dbRow = mapJsToDbInbound(rec);
+      await supabase.from('inbound_records').upsert(dbRow, { onConflict: 'id' });
+      if (Array.isArray(rec.items) && rec.items.length > 0) {
+        const itemRows = rec.items.map((it) => ({
+          voucher_id: rec.id,
+          product_id: it.productId || it.id || '',
+          barcode: it.barcode || '',
+          name: it.name || '',
+          category: it.category || '',
+          unit: it.unit || 'เครื่อง',
+          location: it.location || 'โกดังใหญ่',
+          quantity: Number(it.quantity || 0),
+          cost_price: Number(it.costPrice || 0),
+          sell_price: Number(it.sellPrice || 0),
+          total_cost: Number(it.totalCost || (Number(it.costPrice || 0) * Number(it.quantity || 0)) || 0),
+          serial_no: it.serialNo || '',
+          note: it.note || '',
+        }));
+        await supabase.from('inbound_items').delete().eq('voucher_id', rec.id);
+        await supabase.from('inbound_items').insert(itemRows);
+      }
+    }
+  } catch (err) {
+    console.warn('Sync local inbounds to Supabase notice:', err);
+  }
+};
+
+// Fetch from Supabase and sync with local storage
+export const fetchInboundHistoryFromSupabase = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('inbound_records')
+      .select('*')
+      .order('date', { ascending: false });
+
+    if (error) {
+      // Table may not exist yet if user hasn't run SQL migration in Supabase
+      return getInboundHistory();
+    }
+
+    if (Array.isArray(data)) {
+      const mapped = data.map(mapDbInboundToJs);
+      const local = getInboundHistory();
+      const dbIds = new Set(mapped.map((m) => m.id));
+      const unsynced = local.filter((l) => l && l.id && !dbIds.has(l.id));
+
+      const merged = [...unsynced, ...mapped];
+      merged.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+      localStorage.setItem(STORAGE_INBOUND_KEY, JSON.stringify(merged));
+      window.dispatchEvent(new Event('hualian_inbound_updated'));
+
+      if (unsynced.length > 0) {
+        syncLocalInboundsToSupabase(unsynced);
+      }
+
+      return merged;
+    }
+  } catch (e) {
+    console.error('Fetch inbound from Supabase error:', e);
+  }
+  return getInboundHistory();
+};
+
+// Load stored inbound history from localStorage
 export const getInboundHistory = () => {
   try {
     const raw = localStorage.getItem(STORAGE_INBOUND_KEY);
@@ -18,15 +122,120 @@ export const getInboundHistory = () => {
   }
 };
 
-// Save inbound record
+// Save inbound record (Local + Supabase)
 export const saveInboundRecord = (record) => {
   try {
     const history = getInboundHistory();
-    const updated = [record, ...history];
+    const updated = [record, ...history.filter((h) => h.id !== record.id)];
     localStorage.setItem(STORAGE_INBOUND_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event('hualian_inbound_updated'));
+
+    // Push to Supabase asynchronously
+    (async () => {
+      try {
+        const dbRow = mapJsToDbInbound(record);
+        const { error: recErr } = await supabase.from('inbound_records').upsert(dbRow, { onConflict: 'id' });
+        if (recErr) console.warn('Supabase inbound_records upsert notice:', recErr.message);
+
+        if (Array.isArray(record.items) && record.items.length > 0) {
+          const itemRows = record.items.map((it) => ({
+            voucher_id: record.id,
+            product_id: it.productId || it.id || '',
+            barcode: it.barcode || '',
+            name: it.name || '',
+            category: it.category || '',
+            unit: it.unit || 'เครื่อง',
+            location: it.location || 'โกดังใหญ่',
+            quantity: Number(it.quantity || 0),
+            cost_price: Number(it.costPrice || 0),
+            sell_price: Number(it.sellPrice || 0),
+            total_cost: Number(it.totalCost || (Number(it.costPrice || 0) * Number(it.quantity || 0)) || 0),
+            serial_no: it.serialNo || '',
+            note: it.note || '',
+          }));
+          await supabase.from('inbound_items').delete().eq('voucher_id', record.id);
+          await supabase.from('inbound_items').insert(itemRows);
+        }
+      } catch (err) {
+        console.warn('Sync inbound record to Supabase failed:', err);
+      }
+    })();
+
     return updated;
   } catch (e) {
     console.error('Failed to save inbound record', e);
+    return [];
+  }
+};
+
+// Update inbound record (Local + Supabase)
+export const updateInboundRecord = (updatedRecord) => {
+  try {
+    const history = getInboundHistory();
+    const updated = history.map((r) => (r.id === updatedRecord.id ? updatedRecord : r));
+    localStorage.setItem(STORAGE_INBOUND_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event('hualian_inbound_updated'));
+
+    // Update in Supabase asynchronously
+    (async () => {
+      try {
+        const dbRow = mapJsToDbInbound(updatedRecord);
+        const { error: updErr } = await supabase.from('inbound_records').update(dbRow).eq('id', updatedRecord.id);
+        if (updErr) console.warn('Supabase inbound_records update notice:', updErr.message);
+
+        if (Array.isArray(updatedRecord.items)) {
+          await supabase.from('inbound_items').delete().eq('voucher_id', updatedRecord.id);
+          const itemRows = updatedRecord.items.map((it) => ({
+            voucher_id: updatedRecord.id,
+            product_id: it.productId || it.id || '',
+            barcode: it.barcode || '',
+            name: it.name || '',
+            category: it.category || '',
+            unit: it.unit || 'เครื่อง',
+            location: it.location || 'โกดังใหญ่',
+            quantity: Number(it.quantity || 0),
+            cost_price: Number(it.costPrice || 0),
+            sell_price: Number(it.sellPrice || 0),
+            total_cost: Number(it.totalCost || (Number(it.costPrice || 0) * Number(it.quantity || 0)) || 0),
+            serial_no: it.serialNo || '',
+            note: it.note || '',
+          }));
+          await supabase.from('inbound_items').insert(itemRows);
+        }
+      } catch (err) {
+        console.warn('Sync update inbound record to Supabase failed:', err);
+      }
+    })();
+
+    return updated;
+  } catch (e) {
+    console.error('Failed to update inbound record', e);
+    return [];
+  }
+};
+
+// Delete inbound record (Local + Supabase)
+export const deleteInboundRecord = (voucherId) => {
+  try {
+    const history = getInboundHistory();
+    const updated = history.filter((r) => r.id !== voucherId);
+    localStorage.setItem(STORAGE_INBOUND_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event('hualian_inbound_updated'));
+
+    // Delete in Supabase asynchronously
+    (async () => {
+      try {
+        await supabase.from('inbound_items').delete().eq('voucher_id', voucherId);
+        const { error: delErr } = await supabase.from('inbound_records').delete().eq('id', voucherId);
+        if (delErr) console.warn('Supabase inbound_records delete notice:', delErr.message);
+      } catch (err) {
+        console.warn('Sync delete inbound record to Supabase failed:', err);
+      }
+    })();
+
+    return updated;
+  } catch (e) {
+    console.error('Failed to delete inbound record', e);
     return [];
   }
 };
@@ -49,6 +258,210 @@ export const generateInboundVoucherId = (existingHistory = []) => {
   });
 
   return `${prefix}${String(maxSeq + 1).padStart(3, '0')}`;
+};
+
+// Print Inbound Voucher A4
+export const printInboundVoucher = (record) => {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
+
+  const itemsRows = (record.items || [])
+    .map(
+      (it, idx) => `
+    <tr>
+      <td style="text-align: center; padding: 8px; border-bottom: 1px solid #ddd;">${idx + 1}</td>
+      <td style="text-align: center; font-family: monospace; font-weight: bold; padding: 8px; border-bottom: 1px solid #ddd;">${it.barcode || it.productId}</td>
+      <td style="padding: 8px; border-bottom: 1px solid #ddd;">
+        <div style="font-weight: bold;">${it.name}</div>
+        ${it.serialNo ? `<div style="font-size: 11px; color: #666;">S/N: ${it.serialNo}</div>` : ''}
+        ${it.note ? `<div style="font-size: 11px; color: #888;">หมายเหตุ: ${it.note}</div>` : ''}
+      </td>
+      <td style="text-align: center; padding: 8px; border-bottom: 1px solid #ddd;">${it.location}</td>
+      <td style="text-align: center; font-weight: bold; font-size: 14px; padding: 8px; border-bottom: 1px solid #ddd;">${it.quantity.toLocaleString()}</td>
+      <td style="text-align: center; padding: 8px; border-bottom: 1px solid #ddd;">${it.unit || 'เครื่อง'}</td>
+      <td style="text-align: right; padding: 8px; border-bottom: 1px solid #ddd;">฿${Number(it.costPrice || 0).toLocaleString()}</td>
+      <td style="text-align: right; font-weight: bold; padding: 8px; border-bottom: 1px solid #ddd;">฿${Number(it.totalCost || 0).toLocaleString()}</td>
+    </tr>
+  `
+    )
+    .join('');
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>ใบรับเครื่องเข้าระบบ - ${record.id}</title>
+        <style>
+          @page { size: A4 portrait; margin: 15mm; }
+          body {
+            font-family: 'Noto Sans Thai', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #222;
+            margin: 0;
+            padding: 10px;
+            font-size: 13px;
+            line-height: 1.4;
+          }
+          .voucher-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #2563eb;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+          }
+          .company-name {
+            font-size: 20px;
+            font-weight: bold;
+            color: #1e3a8a;
+          }
+          .doc-title-badge {
+            text-align: right;
+          }
+          .doc-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #059669;
+          }
+          .doc-id {
+            font-size: 14px;
+            font-family: monospace;
+            font-weight: bold;
+            color: #333;
+          }
+          .meta-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 24px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 18px;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+          }
+          th {
+            background: #f1f5f9;
+            border-top: 1px solid #cbd5e1;
+            border-bottom: 2px solid #94a3b8;
+            padding: 10px 8px;
+            font-size: 12px;
+            text-align: left;
+          }
+          .summary-box {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 30px;
+          }
+          .summary-table {
+            width: 320px;
+            border-collapse: collapse;
+          }
+          .summary-table td {
+            padding: 6px 12px;
+            border-bottom: 1px solid #eee;
+          }
+          .signatures {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin-top: 40px;
+            text-align: center;
+          }
+          .sig-line {
+            margin-top: 45px;
+            border-top: 1px dashed #666;
+            padding-top: 6px;
+            font-size: 12px;
+          }
+          @media print {
+            button { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="voucher-header">
+          <div>
+            <div class="company-name">หจก. หัวเหรียญ อีสาน (HUALIAN ESAN)</div>
+            <div style="font-size: 12px; color: #555;">841/7 หมู่ 5 ต.หนองจะบก อ.เมือง จ.นครราชสีมา 30000 | โทร. 044-002716 , 085-4957093</div>
+          </div>
+          <div class="doc-title-badge">
+            <div class="doc-title">ใบรับเครื่องจักรและสินค้าเข้าระบบ</div>
+            <div class="doc-id">เลขที่: ${record.id}</div>
+          </div>
+        </div>
+
+        <div class="meta-grid">
+          <div><strong>วันที่รับเข้า:</strong> ${new Date(record.date).toLocaleDateString('th-TH')} ${new Date(record.date).toLocaleTimeString('th-TH')}</div>
+          <div><strong>ผู้ตรวจรับ:</strong> ${record.receiver}</div>
+          <div><strong>แหล่งที่มา / ผู้จำหน่าย:</strong> ${record.supplier}</div>
+          <div><strong>เลขที่เอกสารอ้างอิง/PO:</strong> ${record.refDocNo || '-'}</div>
+          ${record.notes ? `<div style="grid-column: span 2;"><strong>หมายเหตุ:</strong> ${record.notes}</div>` : ''}
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="text-align: center; width: 40px;">ลำดับ</th>
+              <th style="text-align: center; width: 90px;">รหัสเครื่อง</th>
+              <th>รายการเครื่องจักร / สินค้า</th>
+              <th style="text-align: center; width: 90px;">จัดเก็บที่</th>
+              <th style="text-align: center; width: 70px;">จำนวน</th>
+              <th style="text-align: center; width: 60px;">หน่วย</th>
+              <th style="text-align: right; width: 90px;">ราคาทุน/หน่วย</th>
+              <th style="text-align: right; width: 100px;">รวมมูลค่า</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsRows}
+          </tbody>
+        </table>
+
+        <div class="summary-box">
+          <table class="summary-table">
+            <tr>
+              <td><strong>รวมจำนวนรายการ:</strong></td>
+              <td style="text-align: right;">${record.totalItems} รายการ</td>
+            </tr>
+            <tr>
+              <td><strong>รวมจำนวนเครื่องทั้งสิ้น:</strong></td>
+              <td style="text-align: right; font-weight: bold; font-size: 15px; color: #059669;">${record.totalUnits} เครื่อง</td>
+            </tr>
+            <tr>
+              <td><strong>รวมมูลค่ารับเข้าทั้งสิ้น:</strong></td>
+              <td style="text-align: right; font-weight: bold; font-size: 15px; color: #1e3a8a;">฿${Number(record.totalCostValue || 0).toLocaleString()}</td>
+            </tr>
+          </table>
+        </div>
+
+        <div class="signatures">
+          <div>
+            <div class="sig-line">ผู้ส่งมอบ / ซัพพลายเออร์</div>
+            <div style="font-size: 11px; color: #777; margin-top: 4px;">วันที่ ...../...../..........</div>
+          </div>
+          <div>
+            <div class="sig-line">ผู้ตรวจรับสินค้า (${record.receiver})</div>
+            <div style="font-size: 11px; color: #777; margin-top: 4px;">วันที่ ...../...../..........</div>
+          </div>
+          <div>
+            <div class="sig-line">ผู้มีอำนาจอนุมัติ</div>
+            <div style="font-size: 11px; color: #777; margin-top: 4px;">วันที่ ...../...../..........</div>
+          </div>
+        </div>
+
+        <script>
+          window.focus();
+          setTimeout(() => { window.print(); }, 250);
+        </script>
+      </body>
+    </html>
+  `;
+
+  printWindow.document.write(html);
+  printWindow.document.close();
 };
 
 const ReceiveStockModal = ({ isOpen, onClose, onStockReceived }) => {
@@ -109,6 +522,13 @@ const ReceiveStockModal = ({ isOpen, onClose, onStockReceived }) => {
       const h = getInboundHistory();
       setHistory(h);
       setVoucherId(generateInboundVoucherId(h));
+      // Fetch latest from Supabase Cloud in background
+      fetchInboundHistoryFromSupabase().then((latest) => {
+        if (latest && latest.length > 0) {
+          setHistory(latest);
+          setVoucherId(generateInboundVoucherId(latest));
+        }
+      });
       // Preselect first product if any
       if (state.products && state.products.length > 0 && !selectedProduct) {
         handleSelectProduct(state.products[0]);
@@ -392,9 +812,13 @@ const ReceiveStockModal = ({ isOpen, onClose, onStockReceived }) => {
       }
     }
 
-    // 2. Build Voucher Record and Save
+    // 2. Build Voucher Record and Save (re-verify unique RC voucher ID against latest stored history)
+    const latestInboundHistory = getInboundHistory();
+    const finalVoucherId = latestInboundHistory.some((r) => r && r.id === voucherId)
+      ? generateInboundVoucherId(latestInboundHistory)
+      : voucherId;
     const voucherRecord = {
-      id: voucherId,
+      id: finalVoucherId,
       date: new Date(receiveDate).toISOString(),
       displayDate: receiveDate.replace('T', ' '),
       supplier: supplier.trim() || 'โรงงานนำเข้า HUALIAN',
@@ -451,210 +875,6 @@ const ReceiveStockModal = ({ isOpen, onClose, onStockReceived }) => {
     setInboundItems([]);
     setVoucherId(generateInboundVoucherId(getInboundHistory()));
     onClose();
-  };
-
-  // ─── Print Voucher Function ───────────────────────────────────────
-  const printInboundVoucher = (record) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    const itemsRows = record.items
-      .map(
-        (it, idx) => `
-      <tr>
-        <td style="text-align: center; padding: 8px; border-bottom: 1px solid #ddd;">${idx + 1}</td>
-        <td style="text-align: center; font-family: monospace; font-weight: bold; padding: 8px; border-bottom: 1px solid #ddd;">${it.barcode || it.productId}</td>
-        <td style="padding: 8px; border-bottom: 1px solid #ddd;">
-          <div style="font-weight: bold;">${it.name}</div>
-          ${it.serialNo ? `<div style="font-size: 11px; color: #666;">S/N: ${it.serialNo}</div>` : ''}
-          ${it.note ? `<div style="font-size: 11px; color: #888;">หมายเหตุ: ${it.note}</div>` : ''}
-        </td>
-        <td style="text-align: center; padding: 8px; border-bottom: 1px solid #ddd;">${it.location}</td>
-        <td style="text-align: center; font-weight: bold; font-size: 14px; padding: 8px; border-bottom: 1px solid #ddd;">${it.quantity.toLocaleString()}</td>
-        <td style="text-align: center; padding: 8px; border-bottom: 1px solid #ddd;">${it.unit || 'เครื่อง'}</td>
-        <td style="text-align: right; padding: 8px; border-bottom: 1px solid #ddd;">฿${Number(it.costPrice || 0).toLocaleString()}</td>
-        <td style="text-align: right; font-weight: bold; padding: 8px; border-bottom: 1px solid #ddd;">฿${Number(it.totalCost || 0).toLocaleString()}</td>
-      </tr>
-    `
-      )
-      .join('');
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>ใบรับเครื่องเข้าระบบ - ${record.id}</title>
-          <style>
-            @page { size: A4 portrait; margin: 15mm; }
-            body {
-              font-family: 'Noto Sans Thai', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              color: #222;
-              margin: 0;
-              padding: 10px;
-              font-size: 13px;
-              line-height: 1.4;
-            }
-            .voucher-header {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-              border-bottom: 2px solid #2563eb;
-              padding-bottom: 12px;
-              margin-bottom: 16px;
-            }
-            .company-name {
-              font-size: 20px;
-              font-weight: bold;
-              color: #1e3a8a;
-            }
-            .doc-title-badge {
-              text-align: right;
-            }
-            .doc-title {
-              font-size: 18px;
-              font-weight: bold;
-              color: #059669;
-            }
-            .doc-id {
-              font-size: 14px;
-              font-family: monospace;
-              font-weight: bold;
-              color: #333;
-            }
-            .meta-grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 8px 24px;
-              background: #f8fafc;
-              border: 1px solid #e2e8f0;
-              padding: 12px 16px;
-              border-radius: 6px;
-              margin-bottom: 18px;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 20px;
-            }
-            th {
-              background: #f1f5f9;
-              border-top: 1px solid #cbd5e1;
-              border-bottom: 2px solid #94a3b8;
-              padding: 10px 8px;
-              font-size: 12px;
-              text-align: left;
-            }
-            .summary-box {
-              display: flex;
-              justify-content: flex-end;
-              margin-bottom: 30px;
-            }
-            .summary-table {
-              width: 320px;
-              border-collapse: collapse;
-            }
-            .summary-table td {
-              padding: 6px 12px;
-              border-bottom: 1px solid #eee;
-            }
-            .signatures {
-              display: grid;
-              grid-template-columns: 1fr 1fr 1fr;
-              gap: 20px;
-              margin-top: 40px;
-              text-align: center;
-            }
-            .sig-line {
-              margin-top: 45px;
-              border-top: 1px dashed #666;
-              padding-top: 6px;
-              font-size: 12px;
-            }
-            @media print {
-              button { display: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="voucher-header">
-            <div>
-              <div class="company-name">หจก. หัวเหรียญ อีสาน (HUALIAN ESAN)</div>
-              <div style="font-size: 12px; color: #555;">841/7 หมู่ 5 ต.หนองจะบก อ.เมือง จ.นครราชสีมา 30000 | โทร. 044-002716 , 085-4957093</div>
-            </div>
-            <div class="doc-title-badge">
-              <div class="doc-title">ใบรับเครื่องจักรและสินค้าเข้าระบบ</div>
-              <div class="doc-id">เลขที่: ${record.id}</div>
-            </div>
-          </div>
-
-          <div class="meta-grid">
-            <div><strong>วันที่รับเข้า:</strong> ${new Date(record.date).toLocaleDateString('th-TH')} ${new Date(record.date).toLocaleTimeString('th-TH')}</div>
-            <div><strong>ผู้ตรวจรับ:</strong> ${record.receiver}</div>
-            <div><strong>แหล่งที่มา / ผู้จำหน่าย:</strong> ${record.supplier}</div>
-            <div><strong>เลขที่เอกสารอ้างอิง/PO:</strong> ${record.refDocNo || '-'}</div>
-            ${record.notes ? `<div style="grid-column: span 2;"><strong>หมายเหตุ:</strong> ${record.notes}</div>` : ''}
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th style="text-align: center; width: 40px;">ลำดับ</th>
-                <th style="text-align: center; width: 90px;">รหัสเครื่อง</th>
-                <th>รายการเครื่องจักร / สินค้า</th>
-                <th style="text-align: center; width: 90px;">จัดเก็บที่</th>
-                <th style="text-align: center; width: 70px;">จำนวน</th>
-                <th style="text-align: center; width: 60px;">หน่วย</th>
-                <th style="text-align: right; width: 90px;">ราคาทุน/หน่วย</th>
-                <th style="text-align: right; width: 100px;">รวมมูลค่า</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsRows}
-            </tbody>
-          </table>
-
-          <div class="summary-box">
-            <table class="summary-table">
-              <tr>
-                <td><strong>รวมจำนวนรายการ:</strong></td>
-                <td style="text-align: right;">${record.totalItems} รายการ</td>
-              </tr>
-              <tr>
-                <td><strong>รวมจำนวนเครื่องทั้งสิ้น:</strong></td>
-                <td style="text-align: right; font-weight: bold; font-size: 15px; color: #059669;">${record.totalUnits} เครื่อง</td>
-              </tr>
-              <tr>
-                <td><strong>รวมมูลค่ารับเข้าทั้งสิ้น:</strong></td>
-                <td style="text-align: right; font-weight: bold; font-size: 15px; color: #1e3a8a;">฿${Number(record.totalCostValue || 0).toLocaleString()}</td>
-              </tr>
-            </table>
-          </div>
-
-          <div class="signatures">
-            <div>
-              <div class="sig-line">ผู้ส่งมอบ / ซัพพลายเออร์</div>
-              <div style="font-size: 11px; color: #777; margin-top: 4px;">วันที่ ...../...../..........</div>
-            </div>
-            <div>
-              <div class="sig-line">ผู้ตรวจรับสินค้า (${record.receiver})</div>
-              <div style="font-size: 11px; color: #777; margin-top: 4px;">วันที่ ...../...../..........</div>
-            </div>
-            <div>
-              <div class="sig-line">ผู้มีอำนาจอนุมัติ</div>
-              <div style="font-size: 11px; color: #777; margin-top: 4px;">วันที่ ...../...../..........</div>
-            </div>
-          </div>
-
-          <script>
-            window.focus();
-            setTimeout(() => { window.print(); }, 250);
-          </script>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.write(html);
-    printWindow.document.close();
   };
 
   // Filtered History

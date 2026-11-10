@@ -60,28 +60,9 @@ export async function fetchNextDocumentId({
   localFallbackList = [],
   triedIds = new Set(),
 }) {
-  // 1. If RPC is available (and this is the first attempt without local exclusions), try atomic DB sequence
-  if (rpcDocNumberAvailable !== false && triedIds.size === 0) {
-    try {
-      const { data: rpcId, error: rpcErr } = await supabase.rpc('next_doc_number', {
-        p_prefix: prefix,
-        p_table: table,
-        p_column: column,
-        p_pad: pad,
-      });
-      if (!rpcErr && rpcId && typeof rpcId === 'string') {
-        rpcDocNumberAvailable = true;
-        return rpcId;
-      }
-      if (rpcErr) {
-        rpcDocNumberAvailable = false;
-      }
-    } catch {
-      rpcDocNumberAvailable = false;
-    }
-  }
-
-  // 2. Query live database for all IDs starting with prefix
+  // Query live database directly for all committed IDs starting with prefix.
+  // Using actual table rows (rather than external sequence counters or optimistic local state)
+  // guarantees we never skip a bill number when a preview is opened or a transaction retries.
   let maxNum = 0;
   const existingSet = new Set(triedIds);
 
@@ -100,6 +81,7 @@ export async function fetchNextDocumentId({
     }
   };
 
+  let liveQuerySucceeded = false;
   try {
     const { data, error } = await supabase
       .from(table)
@@ -108,21 +90,23 @@ export async function fetchNextDocumentId({
       .range(0, 9999);
 
     if (!error && Array.isArray(data)) {
+      liveQuerySucceeded = true;
       data.forEach((row) => extractNum(row?.[column]));
     }
   } catch (err) {
     console.warn(`[Concurrency] Live ID fetch fallback for ${table}:`, err);
   }
 
-  // Merge with local in-memory records as an extra safety net
-  if (Array.isArray(localFallbackList)) {
+  // Only fall back to local in-memory records when offline / live query failed,
+  // so unpersisted optimistic records in RAM can never cause a bill number to be skipped.
+  if (!liveQuerySucceeded && Array.isArray(localFallbackList)) {
     localFallbackList.forEach((item) => {
       const val = typeof item === 'string' ? item : item?.[column] || item?.id;
       extractNum(val);
     });
   }
 
-  // Also check triedIds so we always advance past any ID that just collided
+  // Also check triedIds so we always advance past any ID that just collided with 23505
   triedIds.forEach((tid) => extractNum(tid));
 
   let nextNum = maxNum + 1;
@@ -160,19 +144,21 @@ export async function fetchNextPartCode({
     }
   };
 
+  let liveQuerySucceeded = false;
   try {
     const { data, error } = await supabase
       .from('parts')
       .select('part_code')
       .range(0, 9999);
     if (!error && Array.isArray(data)) {
+      liveQuerySucceeded = true;
       data.forEach((row) => addCode(row?.part_code));
     }
   } catch (err) {
     console.warn('[Concurrency] Live part_code fetch fallback:', err);
   }
 
-  if (Array.isArray(localParts)) {
+  if (!liveQuerySucceeded && Array.isArray(localParts)) {
     localParts.forEach((p) => addCode(p?.part_code || p));
   }
   triedCodes.forEach((c) => addCode(c));
@@ -212,14 +198,9 @@ export async function insertWithUniqueIdRetry({
     let candidateId;
     if (customNextIdFn) {
       candidateId = await customNextIdFn({ attempt, triedIds });
-    } else if (
-      attempt === 0 &&
-      initialId &&
-      typeof initialId === 'string' &&
-      !triedIds.has(initialId.toUpperCase())
-    ) {
-      // Even when initialId is passed (e.g. from UI preview), verify against live DB first
-      const liveNextId = await fetchNextDocumentId({
+    } else if (prefix) {
+      // Always use the live database's true next ID so a stale local initialId never skips a bill number
+      candidateId = await fetchNextDocumentId({
         table,
         prefix,
         pad,
@@ -227,14 +208,13 @@ export async function insertWithUniqueIdRetry({
         localFallbackList,
         triedIds,
       });
-      // Parse numeric suffixes to see if initialId is already behind the live DB counter
-      const initSuffix = parseInt(initialId.slice(prefix.length), 10);
-      const liveSuffix = parseInt(liveNextId.slice(prefix.length), 10);
-      if (!isNaN(initSuffix) && !isNaN(liveSuffix) && liveSuffix > initSuffix) {
-        candidateId = liveNextId;
-      } else {
-        candidateId = initialId;
-      }
+    } else if (
+      attempt === 0 &&
+      initialId &&
+      typeof initialId === 'string' &&
+      !triedIds.has(initialId.toUpperCase())
+    ) {
+      candidateId = initialId;
     } else {
       candidateId = await fetchNextDocumentId({
         table,
@@ -249,10 +229,26 @@ export async function insertWithUniqueIdRetry({
     triedIds.add(String(candidateId).toUpperCase());
     const rowPayload = buildRow(candidateId);
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from(table)
       .insert(rowPayload)
       .select();
+
+    // If foreign key on customer_id fails (e.g. deleted or un-synced customer), retry same candidateId with customer_id: null
+    if (
+      error &&
+      rowPayload &&
+      rowPayload.customer_id &&
+      (String(error.code) === '23503' || /foreign key|customer_id/i.test(String(error.message || '') + ' ' + String(error.details || '')))
+    ) {
+      const retryPayload = { ...rowPayload, customer_id: null };
+      const retryRes = await supabase
+        .from(table)
+        .insert(retryPayload)
+        .select();
+      data = retryRes.data;
+      error = retryRes.error;
+    }
 
     if (!error) {
       return {

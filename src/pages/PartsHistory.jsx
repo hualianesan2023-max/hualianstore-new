@@ -3,12 +3,14 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer, Legend
 } from 'recharts';
-import { useStore } from '../data/store';
+import { useStore, ACTIONS } from '../data/store';
 import { supabase } from '../data/supabaseClient';
 import Receipt from '../components/Receipt';
 import { getPartImageUrl } from '../utils/localImageProvider';
 import { showAlert } from '../utils/alerts';
-import { DEFAULT_PART_UNIT, parsePartItemLocationAndUnit } from '../utils/partUnits';
+import Swal from 'sweetalert2';
+import { DEFAULT_PART_UNIT, PART_UNITS, parsePartItemLocationAndUnit, encodePartLocationWithUnit } from '../utils/partUnits';
+import './POS.css';
 import './PartsHistory.css';
 
 // ── Thai Date & Currency Formatters ──
@@ -92,10 +94,415 @@ const SummaryChartTooltip = ({ active, payload }) => {
 const ITEMS_PER_PAGE = 15;
 
 const PartsHistory = () => {
-  const { state } = useStore();
+  const { state, dispatch, refreshSales } = useStore();
   const [parts, setParts] = useState([]);
   const [dbSales, setDbSales] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // ── Edit Receipt (PIN 45500 protected) ──
+  const [editingSale, setEditingSale] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Helper to recompute subtotal, tax, and total whenever items, discount, or shipping change
+  const computeSaleTotals = (items, discountNum, shippingNum, applyVat, isVatInclusive) => {
+    const catalogSubtotal = (items || []).reduce(
+      (sum, it) => sum + (Number(it.sellPrice || 0) * Number(it.quantity || 0)),
+      0
+    );
+    const discountAmount = Math.max(0, Number(discountNum || 0));
+    const afterDiscount = Math.max(0, catalogSubtotal - discountAmount);
+    const extraFees = Math.max(0, Number(shippingNum || 0));
+    const taxRate = 0.07;
+
+    let subtotal, tax, total;
+    if (applyVat) {
+      if (isVatInclusive) {
+        total = Math.round((afterDiscount + extraFees) * 100) / 100;
+        subtotal = Math.round((total / (1 + taxRate)) * 100) / 100;
+        tax = Math.round((total - subtotal) * 100) / 100;
+      } else {
+        subtotal = afterDiscount;
+        const taxBase = subtotal + extraFees;
+        tax = Math.round(taxBase * taxRate * 100) / 100;
+        total = Math.round((subtotal + tax + extraFees) * 100) / 100;
+      }
+    } else {
+      subtotal = afterDiscount;
+      tax = 0;
+      total = Math.round((subtotal + extraFees) * 100) / 100;
+    }
+
+    return { subtotal, tax, total, catalogSubtotal };
+  };
+
+  const handleOpenEditSale = async (sale) => {
+    if (!sale) return;
+    const { value: pin } = await Swal.fire({
+      title: '🔐 รหัสความปลอดภัย',
+      text: `กรุณาใส่รหัสผ่านเพื่อแก้ไขใบเสร็จ ${sale.id}`,
+      input: 'password',
+      inputPlaceholder: '*****',
+      inputAttributes: {
+        maxlength: '10',
+        autocomplete: 'new-password',
+        style: 'text-align: center; letter-spacing: 8px; font-size: 22px;',
+      },
+      showCancelButton: true,
+      confirmButtonText: 'ยืนยัน',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#4f46e5',
+      cancelButtonColor: '#4b5563',
+      background: '#1a1b26',
+      color: '#f3f4f6',
+    });
+    if (pin === undefined) return;
+    if (pin !== '45500') {
+      Swal.fire({
+        icon: 'error',
+        title: 'รหัสผ่านไม่ถูกต้อง',
+        text: 'ไม่สามารถแก้ไขใบเสร็จได้',
+        confirmButtonColor: '#ef4444',
+        background: '#1a1b26',
+        color: '#f3f4f6',
+      });
+      return;
+    }
+
+    const initialApplyVat = sale.applyVat !== undefined ? Boolean(sale.applyVat) : Number(sale.tax || 0) > 0;
+    const initialIsVatInclusive = sale.isVatInclusive !== undefined ? Boolean(sale.isVatInclusive) : true;
+
+    const initialItems = (sale.items || []).map((it, idx) => ({
+      tempId: `item-${idx}-${Date.now()}`,
+      id: it.id || it.productId || '',
+      productId: it.productId || it.id || '',
+      name: it.name || it.product_name || '',
+      unit: it.unit || DEFAULT_PART_UNIT,
+      quantity: Number(it.quantity || 1),
+      sellPrice: Number(it.sellPrice ?? it.sell_price ?? it.price ?? 0),
+      costPrice: Number(it.costPrice ?? it.cost_price ?? 0),
+      selectedLocation: it.selectedLocation || it.selected_location || 'หน้าร้าน',
+    }));
+
+    if (initialItems.length === 0) {
+      initialItems.push({
+        tempId: `item-0-${Date.now()}`,
+        id: '',
+        productId: '',
+        name: 'รายการสินค้า',
+        unit: DEFAULT_PART_UNIT,
+        quantity: 1,
+        sellPrice: Number(sale.subtotal || sale.total || 0),
+        costPrice: 0,
+        selectedLocation: 'หน้าร้าน',
+      });
+    }
+
+    const computed = computeSaleTotals(
+      initialItems,
+      sale.discountAmount || 0,
+      sale.shippingCost || 0,
+      initialApplyVat,
+      initialIsVatInclusive
+    );
+
+    setEditForm({
+      id: sale.id,
+      customerName: sale.customer?.name || 'ลูกค้าทั่วไป',
+      customerPhone: sale.customer?.phone === '-' ? '' : (sale.customer?.phone || ''),
+      customerAddress: sale.customer?.address === '-' ? '' : (sale.customer?.address || ''),
+      customerTaxId: sale.customer?.taxId === '-' ? '' : (sale.customer?.taxId || ''),
+      employee: sale.employee || 'หน้าร้าน',
+      paymentMethod: sale.paymentMethod || 'cash',
+      shippingCost: sale.shippingCost || 0,
+      discountAmount: sale.discountAmount || 0,
+      applyVat: initialApplyVat,
+      isVatInclusive: initialIsVatInclusive,
+      items: initialItems,
+      subtotal: computed.subtotal,
+      tax: computed.tax,
+      total: computed.total,
+    });
+    setEditingSale(sale);
+  };
+
+  const handleItemChange = (idx, field, value) => {
+    setEditForm((prev) => {
+      if (!prev) return prev;
+      const updatedItems = [...prev.items];
+      const itemToUpdate = { ...updatedItems[idx] };
+
+      if (field === 'quantity' || field === 'sellPrice') {
+        itemToUpdate[field] = value === '' ? '' : value;
+      } else {
+        itemToUpdate[field] = value;
+      }
+      updatedItems[idx] = itemToUpdate;
+
+      const computed = computeSaleTotals(
+        updatedItems,
+        prev.discountAmount,
+        prev.shippingCost,
+        prev.applyVat,
+        prev.isVatInclusive
+      );
+
+      return {
+        ...prev,
+        items: updatedItems,
+        subtotal: computed.subtotal,
+        tax: computed.tax,
+        total: computed.total,
+      };
+    });
+  };
+
+  const handleAddItem = () => {
+    setEditForm((prev) => {
+      if (!prev) return prev;
+      const newItem = {
+        tempId: `new-${Date.now()}-${Math.random()}`,
+        id: '',
+        productId: '',
+        name: '',
+        unit: DEFAULT_PART_UNIT,
+        quantity: 1,
+        sellPrice: 0,
+        costPrice: 0,
+        selectedLocation: 'หน้าร้าน',
+      };
+      const updatedItems = [...prev.items, newItem];
+      const computed = computeSaleTotals(
+        updatedItems,
+        prev.discountAmount,
+        prev.shippingCost,
+        prev.applyVat,
+        prev.isVatInclusive
+      );
+      return {
+        ...prev,
+        items: updatedItems,
+        subtotal: computed.subtotal,
+        tax: computed.tax,
+        total: computed.total,
+      };
+    });
+  };
+
+  const handleDeleteItem = (idx) => {
+    setEditForm((prev) => {
+      if (!prev || prev.items.length <= 1) return prev;
+      const updatedItems = prev.items.filter((_, i) => i !== idx);
+      const computed = computeSaleTotals(
+        updatedItems,
+        prev.discountAmount,
+        prev.shippingCost,
+        prev.applyVat,
+        prev.isVatInclusive
+      );
+      return {
+        ...prev,
+        items: updatedItems,
+        subtotal: computed.subtotal,
+        tax: computed.tax,
+        total: computed.total,
+      };
+    });
+  };
+
+  const handleDiscountChange = (val) => {
+    setEditForm((prev) => {
+      if (!prev) return prev;
+      const discountNum = val === '' ? 0 : Number(val);
+      const computed = computeSaleTotals(
+        prev.items,
+        discountNum,
+        prev.shippingCost,
+        prev.applyVat,
+        prev.isVatInclusive
+      );
+      return {
+        ...prev,
+        discountAmount: val,
+        subtotal: computed.subtotal,
+        tax: computed.tax,
+        total: computed.total,
+      };
+    });
+  };
+
+  const handleShippingChange = (val) => {
+    setEditForm((prev) => {
+      if (!prev) return prev;
+      const shippingNum = val === '' ? 0 : Number(val);
+      const computed = computeSaleTotals(
+        prev.items,
+        prev.discountAmount,
+        shippingNum,
+        prev.applyVat,
+        prev.isVatInclusive
+      );
+      return {
+        ...prev,
+        shippingCost: val,
+        subtotal: computed.subtotal,
+        tax: computed.tax,
+        total: computed.total,
+      };
+    });
+  };
+
+  const handleSaveEditSale = async (e) => {
+    e.preventDefault();
+    if (!editForm || !editingSale || isSavingEdit) return;
+
+    // Check items have names
+    const invalidItem = editForm.items.find((it) => !String(it.name || '').trim());
+    if (invalidItem) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'ข้อมูลไม่ครบถ้วน',
+        text: 'กรุณากรอกชื่อสินค้า/อะไหล่ให้ครบทุกรายการ',
+        confirmButtonColor: '#f59e0b',
+        background: '#1a1b26',
+        color: '#f3f4f6',
+      });
+      return;
+    }
+
+    setIsSavingEdit(true);
+
+    const updatedCustomer = {
+      name: editForm.customerName.trim() || 'ลูกค้าทั่วไป',
+      phone: editForm.customerPhone.trim() || '-',
+      address: editForm.customerAddress.trim() || '-',
+      taxId: editForm.customerTaxId.trim() || '-',
+    };
+
+    const computed = computeSaleTotals(
+      editForm.items,
+      editForm.discountAmount,
+      editForm.shippingCost,
+      editForm.applyVat,
+      editForm.isVatInclusive
+    );
+
+    const isPurePartsSale = Boolean(editingSale.id && editingSale.id.startsWith('IVS'));
+
+    try {
+      if (isPurePartsSale) {
+        // 1. Update sales_part record
+        const { error: spErr } = await supabase
+          .from('sales_part')
+          .update({
+            customer_name: updatedCustomer.name,
+            customer_phone: updatedCustomer.phone,
+            customer_address: updatedCustomer.address,
+            customer_tax_id: updatedCustomer.taxId,
+            salesperson: editForm.employee,
+            payment_method: editForm.paymentMethod,
+            shipping_cost: Number(editForm.shippingCost || 0),
+            discount_amount: Number(editForm.discountAmount || 0),
+            subtotal: Number(computed.subtotal),
+            tax: Number(computed.tax),
+            total: Number(computed.total),
+          })
+          .eq('id', editForm.id);
+
+        if (spErr) throw spErr;
+
+        // 2. Delete existing items in sale_items_part
+        const { error: delErr } = await supabase
+          .from('sale_items_part')
+          .delete()
+          .eq('sale_id', editForm.id);
+        if (delErr) {
+          console.warn('Delete old sale_items_part warning:', delErr);
+        }
+
+        // 3. Insert updated items into sale_items_part
+        const itemsToInsert = editForm.items.map((it) => {
+          const finalUnit = String(it.unit || DEFAULT_PART_UNIT).trim() || DEFAULT_PART_UNIT;
+          return {
+            sale_id: editForm.id,
+            product_id: it.productId || it.id || null,
+            product_name: it.name.trim(),
+            quantity: Number(it.quantity || 1),
+            unit: finalUnit,
+            cost_price: Number(it.costPrice || 0),
+            sell_price: Number(it.sellPrice || 0),
+            selected_location: it.selectedLocation || 'หน้าร้าน',
+          };
+        });
+
+        const { error: itemsErr } = await supabase
+          .from('sale_items_part')
+          .insert(itemsToInsert);
+
+        if (itemsErr) {
+          // Fallback if 'unit' column doesn't exist natively
+          const fallbackItems = itemsToInsert.map((it) => ({
+            sale_id: it.sale_id,
+            product_id: it.product_id,
+            product_name: it.product_name,
+            quantity: it.quantity,
+            cost_price: it.cost_price,
+            sell_price: it.sell_price,
+            selected_location: encodePartLocationWithUnit(it.selected_location, it.unit),
+          }));
+          await supabase.from('sale_items_part').insert(fallbackItems);
+        }
+      } else {
+        const updatedSale = {
+          ...editingSale,
+          customer: updatedCustomer,
+          employee: editForm.employee,
+          paymentMethod: editForm.paymentMethod,
+          shippingCost: Number(editForm.shippingCost || 0),
+          discountAmount: Number(editForm.discountAmount || 0),
+          subtotal: Number(computed.subtotal),
+          tax: Number(computed.tax),
+          total: Number(computed.total),
+          items: editForm.items.map((it) => ({
+            ...it,
+            name: it.name.trim(),
+            quantity: Number(it.quantity || 1),
+            unit: it.unit || DEFAULT_PART_UNIT,
+            sellPrice: Number(it.sellPrice || 0),
+            costPrice: Number(it.costPrice || 0),
+          })),
+        };
+        await dispatch({ type: ACTIONS.UPDATE_SALE, payload: updatedSale });
+      }
+
+      setEditingSale(null);
+      setEditForm(null);
+      await fetchData(true);
+      if (refreshSales) refreshSales();
+
+      Swal.fire({
+        icon: 'success',
+        title: 'บันทึกการแก้ไขแล้ว',
+        text: `อัปเดตข้อมูลและรายการสินค้าในใบเสร็จ ${editForm.id} สำเร็จ (สต๊อกสินค้าคงเดิม)`,
+        confirmButtonColor: '#10b981',
+        confirmButtonText: 'ตกลง',
+        background: '#1a1b26',
+        color: '#f3f4f6',
+      });
+    } catch (err) {
+      console.error('Error updating parts sale:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'เกิดข้อผิดพลาดในการบันทึก',
+        text: err.message || 'ไม่สามารถอัปเดตข้อมูลใบเสร็จได้',
+        confirmButtonColor: '#ef4444',
+        background: '#1a1b26',
+        color: '#f3f4f6',
+      });
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   // Tab state: 'invoices' | 'movement' | 'summary' | 'reports'
   const [activeTab, setActiveTab] = useState('invoices');
@@ -141,14 +548,15 @@ const PartsHistory = () => {
   const [selectedSaleForReceipt, setSelectedSaleForReceipt] = useState(null);
 
   // ── Fetch Data from Supabase ──
-  const fetchData = useCallback(async () => {
-    setIsLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
       // 1. Fetch Parts
       const { data: partsData, error: partsErr } = await supabase
         .from('parts')
         .select('*')
-        .order('part_code', { ascending: true });
+        .order('part_code', { ascending: true })
+        .range(0, 9999);
       if (partsErr) throw partsErr;
       setParts(partsData || []);
 
@@ -156,13 +564,15 @@ const PartsHistory = () => {
       const { data: salesData, error: salesErr } = await supabase
         .from('sales_part')
         .select('*')
-        .order('date', { ascending: false });
+        .order('date', { ascending: false })
+        .range(0, 9999);
       if (salesErr) throw salesErr;
 
       // 3. Fetch Sale Items from sale_items_part
       const { data: itemsData, error: itemsErr } = await supabase
         .from('sale_items_part')
-        .select('*');
+        .select('*')
+        .range(0, 9999);
       if (itemsErr) throw itemsErr;
 
       // Map sale items grouped by sale_id
@@ -230,32 +640,38 @@ const PartsHistory = () => {
   useEffect(() => {
     fetchData();
 
+    const handleFocus = () => fetchData(true);
+    window.addEventListener('focus', handleFocus);
+    const intervalId = setInterval(() => fetchData(true), 20000);
+
     const channel = supabase
       .channel('parts_history_realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sales_part' },
         () => {
-          fetchData();
+          fetchData(true);
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sale_items_part' },
         () => {
-          fetchData();
+          fetchData(true);
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'parts' },
         () => {
-          fetchData();
+          fetchData(true);
         }
       )
       .subscribe();
 
     return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(intervalId);
       supabase.removeChannel(channel);
     };
   }, [fetchData]);
@@ -1248,14 +1664,24 @@ const PartsHistory = () => {
                         </td>
 
                         <td style={{ textAlign: 'center' }}>
-                          <button
-                            type="button"
-                            className="ph-btn-view-receipt"
-                            onClick={() => setSelectedSaleForReceipt(sale)}
-                            title="ดูและพิมพ์ใบเสร็จ"
-                          >
-                            🧾 ใบเสร็จ
-                          </button>
+                          <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              className="ph-btn-edit-receipt"
+                              onClick={() => handleOpenEditSale(sale)}
+                              title="แก้ไขใบเสร็จ (สต๊อกไม่เปลี่ยน)"
+                            >
+                              ✏️ แก้ไข
+                            </button>
+                            <button
+                              type="button"
+                              className="ph-btn-view-receipt"
+                              onClick={() => setSelectedSaleForReceipt(sale)}
+                              title="ดูและพิมพ์ใบเสร็จ"
+                            >
+                              🧾 ใบเสร็จ
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1620,14 +2046,25 @@ const PartsHistory = () => {
                           </td>
 
                           <td style={{ textAlign: 'center' }}>
-                            <button
-                              type="button"
-                              className="ph-btn-view-receipt"
-                              onClick={() => setSelectedSaleForReceipt(m.fullSale)}
-                              title="ดูใบเสร็จ"
-                            >
-                              🧾
-                            </button>
+                            <div style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
+                              <button
+                                type="button"
+                                className="ph-btn-edit-receipt"
+                                onClick={() => handleOpenEditSale(m.fullSale)}
+                                title="แก้ไขใบเสร็จ (สต๊อกไม่เปลี่ยน)"
+                                style={{ padding: '4px 6px', fontSize: '11px' }}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                className="ph-btn-view-receipt"
+                                onClick={() => setSelectedSaleForReceipt(m.fullSale)}
+                                title="ดูใบเสร็จ"
+                              >
+                                🧾
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2174,6 +2611,329 @@ const PartsHistory = () => {
           sale={selectedSaleForReceipt}
           onClose={() => setSelectedSaleForReceipt(null)}
         />
+      )}
+
+      {/* ── Edit Receipt Modal ── */}
+      {editingSale && editForm && (
+        <div className="rcm-edit-overlay" onClick={() => setEditingSale(null)}>
+          <div className="rcm-edit-box" onClick={(e) => e.stopPropagation()}>
+            <div className="rcm-modal-header">
+              <div>
+                <h3 className="rcm-modal-title">✏️ แก้ไขข้อมูลใบเสร็จ {editForm.id}</h3>
+                <p className="rcm-modal-subtitle">* การแก้ไขนี้จะไม่มีผลต่อสต๊อกสินค้า (สต๊อกสินค้าคงเดิม)</p>
+              </div>
+              <button className="rcm-modal-close" onClick={() => setEditingSale(null)}>✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEditSale} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+              <div className="rcm-edit-body">
+                <div className="rcm-form-row">
+                  <div className="rcm-form-group">
+                    <label>เลขที่บิล</label>
+                    <input type="text" value={editForm.id} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                  </div>
+                  <div className="rcm-form-group">
+                    <label>ผู้ขาย</label>
+                    <select
+                      value={editForm.employee}
+                      onChange={(e) => setEditForm({ ...editForm, employee: e.target.value })}
+                    >
+                      {!['หน้าร้าน','สาขา','ออฟฟิศ','Shopee','Tiktok','เพจ','สายฝน(ฝน)','สุบิน(ต๋อง)','ชฎาพร(แก้ม)','โชคชัย(เอ็ก)','เกียรติชัย (พี่เกียรติ)','พรหมโชติ(แซมมี่)','เพอเฟ็ค'].includes(editForm.employee) && (
+                        <option value={editForm.employee}>{editForm.employee}</option>
+                      )}
+                      <option value="หน้าร้าน">🏪 หน้าร้าน</option>
+                      <option value="สาขา">🏢 สาขา</option>
+                      <option value="ออฟฟิศ">🏢 ออฟฟิศ</option>
+                      <option value="Shopee">🛍️ Shopee</option>
+                      <option value="Tiktok">🎵 Tiktok</option>
+                      <option value="เพจ">📱 เพจ</option>
+                      <option value="สายฝน(ฝน)">👩 สายฝน</option>
+                      <option value="สุบิน(ต๋อง)">👨 สุบิน</option>
+                      <option value="ชฎาพร(แก้ม)">👩 ชฎาพร</option>
+                      <option value="โชคชัย(เอ็ก)">👨 โชคชัย</option>
+                      <option value="เกียรติชัย (พี่เกียรติ)">👨 เกียรติชัย</option>
+                      <option value="พรหมโชติ(แซมมี่)">👩 พรหมโชติ</option>
+                      <option value="เพอเฟ็ค">👤 เพอเฟ็ค</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="rcm-form-row">
+                  <div className="rcm-form-group">
+                    <label>ชื่อลูกค้า / บริษัท</label>
+                    <input
+                      type="text"
+                      value={editForm.customerName}
+                      onChange={(e) => setEditForm({ ...editForm, customerName: e.target.value })}
+                    />
+                  </div>
+                  <div className="rcm-form-group">
+                    <label>เบอร์โทรศัพท์</label>
+                    <input
+                      type="text"
+                      value={editForm.customerPhone}
+                      onChange={(e) => setEditForm({ ...editForm, customerPhone: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="rcm-form-group">
+                  <label>ที่อยู่ลูกค้า</label>
+                  <textarea
+                    rows="2"
+                    value={editForm.customerAddress}
+                    onChange={(e) => setEditForm({ ...editForm, customerAddress: e.target.value })}
+                  />
+                </div>
+
+                <div className="rcm-row-payment-tax">
+                  <div className="rcm-form-row">
+                    <div className="rcm-form-group">
+                      <label>เลขประจำตัวผู้เสียภาษี (Tax ID)</label>
+                      <input
+                        type="text"
+                        value={editForm.customerTaxId}
+                        onChange={(e) => setEditForm({ ...editForm, customerTaxId: e.target.value })}
+                      />
+                    </div>
+                    <div className="rcm-form-group">
+                      <label>วิธีชำระเงิน</label>
+                      <select
+                        value={editForm.paymentMethod}
+                        onChange={(e) => setEditForm({ ...editForm, paymentMethod: e.target.value })}
+                      >
+                        <option value="cash">💵 เงินสด</option>
+                        <option value="transfer">💳 เงินโอน</option>
+                        <option value="qr">📱 สแกน QR Code</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Items & Price List Section ── */}
+                <div style={{ marginTop: '4px', borderTop: '1px solid #1e2235', paddingTop: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <label style={{ fontSize: '13.5px', fontWeight: '700', color: '#38bdf8' }}>
+                      📦 รายการสินค้า/อะไหล่ ({editForm.items?.length || 0} รายการ)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleAddItem}
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        border: '1px solid #0284c7',
+                        color: '#38bdf8',
+                        borderRadius: '8px',
+                        padding: '6px 14px',
+                        fontSize: '12.5px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      ➕ เพิ่มรายการ
+                    </button>
+                  </div>
+
+                  <div style={{ background: '#0d101e', borderRadius: '12px', border: '1px solid #1f253d', overflow: 'hidden' }}>
+                    <div style={{ overflowX: 'auto', maxHeight: '240px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                        <thead>
+                          <tr style={{ background: '#161a2e', color: '#94a3b8', borderBottom: '1px solid #232942', textAlign: 'left', position: 'sticky', top: 0, zIndex: 2 }}>
+                            <th style={{ padding: '8px 10px', width: '38%' }}>ชื่อรายการ</th>
+                            <th style={{ padding: '8px 8px', width: '16%' }}>หน่วย</th>
+                            <th style={{ padding: '8px 8px', width: '13%', textAlign: 'center' }}>จำนวน</th>
+                            <th style={{ padding: '8px 8px', width: '16%', textAlign: 'right' }}>ราคา/หน่วย (฿)</th>
+                            <th style={{ padding: '8px 8px', width: '17%', textAlign: 'right' }}>รวม (฿)</th>
+                            <th style={{ padding: '8px 6px', width: '32px', textAlign: 'center' }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {editForm.items?.map((item, idx) => (
+                            <tr key={item.tempId || idx} style={{ borderBottom: '1px solid #181d33' }}>
+                              <td style={{ padding: '6px 8px' }}>
+                                <input
+                                  type="text"
+                                  value={item.name}
+                                  onChange={(e) => handleItemChange(idx, 'name', e.target.value)}
+                                  placeholder="ชื่อรายการ"
+                                  style={{
+                                    width: '100%',
+                                    background: '#15192c',
+                                    border: '1px solid #2a314d',
+                                    borderRadius: '6px',
+                                    padding: '6px 8px',
+                                    color: '#f8fafc',
+                                    fontSize: '12px',
+                                  }}
+                                />
+                              </td>
+                              <td style={{ padding: '6px 6px' }}>
+                                <input
+                                  type="text"
+                                  list="part-units-list"
+                                  value={item.unit || DEFAULT_PART_UNIT}
+                                  onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
+                                  placeholder="หน่วย"
+                                  style={{
+                                    width: '100%',
+                                    background: '#15192c',
+                                    border: '1px solid #2a314d',
+                                    borderRadius: '6px',
+                                    padding: '6px 6px',
+                                    color: '#f8fafc',
+                                    fontSize: '12px',
+                                    textAlign: 'center',
+                                  }}
+                                />
+                              </td>
+                              <td style={{ padding: '6px 6px' }}>
+                                <input
+                                  type="number"
+                                  min="0.01"
+                                  step="any"
+                                  value={item.quantity}
+                                  onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
+                                  style={{
+                                    width: '100%',
+                                    background: '#15192c',
+                                    border: '1px solid #2a314d',
+                                    borderRadius: '6px',
+                                    padding: '6px 6px',
+                                    color: '#f8fafc',
+                                    fontSize: '12px',
+                                    textAlign: 'center',
+                                  }}
+                                />
+                              </td>
+                              <td style={{ padding: '6px 6px' }}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={item.sellPrice}
+                                  onChange={(e) => handleItemChange(idx, 'sellPrice', e.target.value)}
+                                  style={{
+                                    width: '100%',
+                                    background: '#15192c',
+                                    border: '1px solid #2a314d',
+                                    borderRadius: '6px',
+                                    padding: '6px 6px',
+                                    color: '#34d399',
+                                    fontWeight: '600',
+                                    fontSize: '12px',
+                                    textAlign: 'right',
+                                  }}
+                                />
+                              </td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700', color: '#f8fafc', whiteSpace: 'nowrap' }}>
+                                ฿{(Number(item.quantity || 0) * Number(item.sellPrice || 0)).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ padding: '6px 6px', textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteItem(idx)}
+                                  disabled={editForm.items?.length <= 1}
+                                  title={editForm.items?.length <= 1 ? "ต้องมีอย่างน้อย 1 รายการ" : "ลบรายการนี้"}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: editForm.items?.length <= 1 ? '#475569' : '#ef4444',
+                                    cursor: editForm.items?.length <= 1 ? 'not-allowed' : 'pointer',
+                                    fontSize: '15px',
+                                    padding: '2px 4px',
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <datalist id="part-units-list">
+                    {PART_UNITS.map((u) => (
+                      <option key={u} value={u} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div className="rcm-form-row">
+                  <div className="rcm-form-group">
+                    <label>ค่าจัดส่ง (บาท)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editForm.shippingCost}
+                      onChange={(e) => handleShippingChange(e.target.value)}
+                    />
+                  </div>
+                  <div className="rcm-form-group">
+                    <label>ส่วนลด (บาท)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editForm.discountAmount}
+                      onChange={(e) => handleDiscountChange(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ background: '#0d101e', padding: '14px 18px', borderRadius: '12px', fontSize: '13px', color: '#94a3b8', border: '1px solid #1f253d' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span>ยอดรวมสินค้า (ก่อนหักส่วนลด):</span>
+                    <span style={{ color: '#f8fafc', fontWeight: '600' }}>
+                      ฿{(editForm.items || []).reduce((s, it) => s + (Number(it.sellPrice || 0) * Number(it.quantity || 0)), 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  {Number(editForm.discountAmount || 0) > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#f87171' }}>
+                      <span>หักส่วนลด:</span>
+                      <span>-฿{Number(editForm.discountAmount).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  {Number(editForm.shippingCost || 0) > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#38bdf8' }}>
+                      <span>ค่าจัดส่ง:</span>
+                      <span>+฿{Number(editForm.shippingCost).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  {editForm.applyVat && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span>ภาษี VAT (7%):</span>
+                      <span style={{ color: '#f8fafc' }}>฿{Number(editForm.tax || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#10b981', fontSize: '16px', borderTop: '1px solid #1e293b', paddingTop: '8px', marginTop: '4px' }}>
+                    <span>ยอดสุทธิรวม:</span>
+                    <span>฿{Number(editForm.total || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rcm-edit-footer">
+                <button
+                  type="button"
+                  style={{ padding: '10px 18px', background: '#1e2235', border: '1px solid #2d334d', borderRadius: '10px', color: '#94a3b8', cursor: 'pointer', fontWeight: '600' }}
+                  onClick={() => setEditingSale(null)}
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  style={{ padding: '10px 22px', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', borderRadius: '10px', color: '#ffffff', cursor: 'pointer', fontWeight: '600', opacity: isSavingEdit ? 0.6 : 1 }}
+                >
+                  {isSavingEdit ? '⏳ กำลังบันทึก...' : '💾 บันทึกการแก้ไข'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

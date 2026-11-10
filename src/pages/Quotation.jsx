@@ -112,7 +112,7 @@ const formatCurrency = (amount) => {
 };
 
 const Quotation = () => {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, refreshSales } = useStore();
   const store = state?.storeInfo || {
     name: 'ห้างลงทุนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.',
     address: 'สำนักงานใหญ่ : 841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000',
@@ -124,6 +124,12 @@ const Quotation = () => {
 
   const quotations = state?.quotations || [];
   const [activeTab, setActiveTab] = useState('history'); // history | create
+
+  useEffect(() => {
+    if (refreshSales) {
+      refreshSales();
+    }
+  }, [refreshSales]);
   
   // Search & filter states
   const [historySearch, setHistorySearch] = useState('');
@@ -228,10 +234,25 @@ const Quotation = () => {
     }
   };
 
-  // Keep quotation number automatically synced when Realtime updates arrive while creating a new quotation
+  // Keep quotation number automatically synced when Realtime updates arrive or date changes while creating a new quotation
   useEffect(() => {
     if (activeTab === 'create' && !editId && quotationDate) {
       setQuotationNo(generateQuotationNo(quotationDate));
+      let cancelled = false;
+      const { yymm } = getThaiYearMonth(quotationDate);
+      fetchNextDocumentId({
+        table: 'quotations',
+        prefix: `QT${yymm}-`,
+        pad: 3,
+        localFallbackList: quotations,
+      })
+        .then((liveNo) => {
+          if (!cancelled && liveNo) setQuotationNo(liveNo);
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
     }
   }, [quotations, activeTab, editId, quotationDate]);
 
@@ -497,15 +518,6 @@ const Quotation = () => {
       }
 
       if (saveSuccess) {
-        const dashIdx = newQuotation.id.lastIndexOf('-');
-        if (dashIdx !== -1) {
-          const prefix = newQuotation.id.slice(0, dashIdx + 1);
-          const suffix = newQuotation.id.slice(dashIdx + 1);
-          const seqNum = parseInt(suffix, 10) || 0;
-          const yyMm = prefix.replace('QT', '').replace('-', '');
-          localStorage.setItem(`last_quotation_seq_${yyMm}`, String(seqNum));
-        }
-
         setEditId(null);
         setActiveTab('history');
       }

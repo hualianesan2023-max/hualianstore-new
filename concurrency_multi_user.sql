@@ -55,10 +55,12 @@ BEGIN
     p_col, length(p_prefix) + 1, p_table, p_col, p_prefix || '%', p_col, length(p_prefix) + 1
   ) INTO v_max_db;
 
+  v_next := v_max_db + 1;
+
   INSERT INTO public.doc_sequences (prefix, last_seq, updated_at)
-  VALUES (p_table || ':' || p_prefix, v_max_db + 1, now())
+  VALUES (p_table || ':' || p_prefix, v_next, now())
   ON CONFLICT (prefix) DO UPDATE
-    SET last_seq = GREATEST(public.doc_sequences.last_seq + 1, v_max_db + 1),
+    SET last_seq = v_next,
         updated_at = now()
   RETURNING last_seq INTO v_next;
 

@@ -56,7 +56,7 @@ const Toast = ({ message, type, show }) => (
 
 // ===== POS Component =====
 const POS = () => {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, refreshSales } = useStore();
   const { products = [], categories = [], promotions = [], storeInfo = {}, customers = [] } = state || {};
   const storeName = storeInfo.name || 'ร้านค้า';
   const taxRate = (storeInfo.taxRate || 7) / 100;
@@ -145,6 +145,7 @@ const POS = () => {
     });
 
     if (pin === '45500') {
+      if (refreshSales) refreshSales();
       setShowReceiptManagerModal(true);
     } else if (pin !== undefined) {
       Swal.fire({
@@ -873,7 +874,10 @@ const POS = () => {
       };
 
       // Dispatch sale and wait for atomic DB assignment
-      await dispatch({ type: 'ADD_SALE', payload: saleRecord });
+      const saleSavedOk = await dispatch({ type: 'ADD_SALE', payload: saleRecord });
+      if (!saleSavedOk) {
+        return;
+      }
 
       // If this sale was loaded from a quotation, delete the quotation now that it has been paid!
       if (loadedQuotationId) {

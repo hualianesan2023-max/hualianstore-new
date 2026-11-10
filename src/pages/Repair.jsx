@@ -843,7 +843,10 @@ const RepairTable = ({
 
 // ── Main Repair Page ──────────────────────────────────────
 const Repair = () => {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, refreshSales } = useStore();
+  React.useEffect(() => {
+    if (refreshSales) refreshSales();
+  }, [refreshSales]);
   const customerRepairs    = state.customerRepairs || [];
   const shopRepairs        = state.shopRepairs     || [];
   const customerDeliveries = state.customerDeliveries || [];
