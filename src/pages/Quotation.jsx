@@ -4,6 +4,7 @@ import logoImg from '../assets/logo.png';
 import './Quotation.css';
 import { showAlert, showConfirm } from '../utils/alerts';
 import { fetchNextDocumentId, getThaiYearMonth } from '../utils/concurrency';
+import { cleanupExpiredQuotations, getDaysRemaining } from '../utils/quotationCleanup';
 
 // ── Thai Baht Text Conversion ───────────────────────────────────
 const bahtText = (num) => {
@@ -125,11 +126,57 @@ const Quotation = () => {
   const quotations = state?.quotations || [];
   const [activeTab, setActiveTab] = useState('history'); // history | create
 
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
+
   useEffect(() => {
     if (refreshSales) {
       refreshSales();
     }
+    // Auto-cleanup check on mounting
+    cleanupExpiredQuotations({ maxAgeDays: 30 }).then((res) => {
+      if (res && res.totalDeleted > 0 && refreshSales) {
+        refreshSales();
+      }
+    }).catch(console.warn);
   }, [refreshSales]);
+
+  // Handle Manual Cleanup
+  const handleManualCleanup = async () => {
+    const confirmed = await showConfirm(
+      'ล้างใบเสนอราคาที่ไม่มีการเคลื่อนไหวเกิน 1 เดือน',
+      'ระบบจะตรวจสอบใบเสนอราคาทั้งเครื่องจักรและอะไหล่ที่มีอายุเกิน 30 วัน และลบออกจากฐานข้อมูลเพื่อลดภาระข้อมูล',
+      'ใช่, ล้างข้อมูลทันที',
+      'ยกเลิก'
+    );
+    if (!confirmed) return;
+
+    setIsCleaningUp(true);
+    try {
+      const res = await cleanupExpiredQuotations({ maxAgeDays: 30, force: true });
+      if (res && res.success) {
+        if (res.totalDeleted > 0) {
+          await showAlert(
+            'ล้างข้อมูลสำเร็จ',
+            `ลบใบเสนอราคาที่หมดอายุแล้วทั้งหมด ${res.totalDeleted} รายการ\n(เครื่องจักร: ${res.deletedMachineCount} รายการ, อะไหล่: ${res.deletedPartCount} รายการ)`,
+            'success'
+          );
+          if (refreshSales) refreshSales();
+        } else {
+          await showAlert(
+            'ข้อมูลเป็นปัจจุบันแล้ว',
+            'ไม่พบใบเสนอราคาที่เกิน 1 เดือน (30 วัน) ทุกรายการยังอยู่ในเกณฑ์ที่กำหนด',
+            'info'
+          );
+        }
+      } else {
+        await showAlert('เกิดข้อผิดพลาด', res?.error || 'ไม่สามารถล้างข้อมูลได้', 'error');
+      }
+    } catch (err) {
+      await showAlert('เกิดข้อผิดพลาด', err.message, 'error');
+    } finally {
+      setIsCleaningUp(false);
+    }
+  };
   
   // Search & filter states
   const [historySearch, setHistorySearch] = useState('');
@@ -624,8 +671,27 @@ const Quotation = () => {
                 onChange={(e) => setHistorySearch(e.target.value)}
               />
             </div>
-            <div className="total-badge">
-              ใบเสนอราคาทั้งหมด: {filteredHistory.length} รายการ
+            <div className="toolbar-actions">
+              <button 
+                type="button" 
+                className="btn-cleanup-quotations"
+                onClick={handleManualCleanup}
+                disabled={isCleaningUp}
+                title="ลบใบเสนอราคาที่เกิน 30 วันอัตโนมัติเพื่อลดภาระข้อมูล"
+              >
+                {isCleaningUp ? '⏳ กำลังตรวจสอบ...' : '🧹 ล้างใบเสนอราคาหมดอายุ (>30 วัน)'}
+              </button>
+              <div className="total-badge">
+                ใบเสนอราคาทั้งหมด: {filteredHistory.length} รายการ
+              </div>
+            </div>
+          </div>
+
+          {/* Auto-cleanup Information Banner */}
+          <div className="quotation-auto-cleanup-banner">
+            <span className="banner-icon">⚡</span>
+            <div className="banner-text">
+              <strong>ระบบจัดการข้อมูลอัตโนมัติ:</strong> ใบเสนอราคาที่ไม่มีการทำรายการต่อภายใน 1 เดือน (30 วัน) จะถูกลบออกอัตโนมัติ เพื่อป้องกันฐานข้อมูลทำงานหนัก
             </div>
           </div>
 
@@ -656,7 +722,20 @@ const Quotation = () => {
                   {filteredHistory.map((q) => (
                     <tr key={q.id}>
                       <td className="font-bold text-indigo">{q.id}</td>
-                      <td>{formatDateThaiShort(q.date)}</td>
+                      <td>
+                        <div>{formatDateThaiShort(q.date)}</div>
+                        {(() => {
+                          const daysLeft = getDaysRemaining(q.date, q.created_at);
+                          return (
+                            <span 
+                              className={`expiry-pill ${daysLeft <= 5 ? 'expiring-soon' : ''}`}
+                              title="ระบบจะลบอัตโนมัติเมื่อครบ 30 วัน หากไม่มีการสั่งซื้อ"
+                            >
+                              ⏳ เหลือ {daysLeft} วัน
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td>
                         <div className="cust-info-cell">
                           <span className="name">{q.customerName}</span>

@@ -120,6 +120,16 @@ const PartsPOS = () => {
   const [showReceipt, setShowReceipt] = useState(false);
   const [lastSale, setLastSale] = useState(null);
 
+  // Cancel Parts Sale / Return Stock State (PIN 45500 protected)
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelSearchId, setCancelSearchId] = useState('');
+  const [foundSale, setFoundSale] = useState(null);
+  const [foundSaleItems, setFoundSaleItems] = useState([]);
+  const [isSearchingSale, setIsSearchingSale] = useState(false);
+  const [isCancellingSale, setIsCancellingSale] = useState(false);
+  const [searchError, setSearchError] = useState(null);
+  const [recentSales, setRecentSales] = useState([]);
+
   // Toast helper
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type, show: true });
@@ -712,6 +722,296 @@ const PartsPOS = () => {
     showToast
   ]);
 
+  // ─── Cancel Parts Sale & Return Stock Handlers (PIN 45500) ─────────
+  const handleOpenCancelModal = useCallback(async () => {
+    const { value: pin } = await Swal.fire({
+      title: '🔐 รหัสความปลอดภัย',
+      html: '<span style="font-size: 14px; color: #cbd5e1;">กรุณาระบุรหัสผ่านเพื่อเข้าสู่ระบบ <b>ยกเลิกบิล/คืนอะไหล่</b></span>',
+      input: 'password',
+      inputPlaceholder: '*****',
+      inputAttributes: {
+        maxlength: '10',
+        autocomplete: 'new-password',
+        style: 'text-align: center; letter-spacing: 8px; font-size: 24px;',
+      },
+      showCancelButton: true,
+      confirmButtonText: 'ยืนยันรหัส',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#4b5563',
+      background: '#1a1b26',
+      color: '#f3f4f6',
+    });
+
+    if (pin === undefined) return;
+    if (pin !== '45500') {
+      Swal.fire({
+        icon: 'error',
+        title: 'รหัสผ่านไม่ถูกต้อง',
+        text: 'รหัสความปลอดภัยไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง',
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'ตกลง',
+        background: '#1a1b26',
+        color: '#f3f4f6',
+      });
+      return;
+    }
+
+    // Fetch 5 most recent sales for quick 1-click select
+    try {
+      const { data: recents } = await supabase
+        .from('sales_part')
+        .select('id, date, customer_name, total')
+        .order('date', { ascending: false })
+        .limit(5);
+      setRecentSales(recents || []);
+    } catch (e) {
+      console.warn('Error fetching recent sales:', e);
+    }
+
+    setCancelSearchId('');
+    setFoundSale(null);
+    setFoundSaleItems([]);
+    setSearchError(null);
+    setShowCancelModal(true);
+  }, []);
+
+  const handleSearchSaleToCancel = useCallback(
+    async (rawId) => {
+      if (!rawId || !String(rawId).trim()) return;
+      const cleanId = String(rawId).trim().toUpperCase();
+      setIsSearchingSale(true);
+      setSearchError(null);
+      setFoundSale(null);
+      setFoundSaleItems([]);
+
+      try {
+        // Try searching exact ID first
+        let { data: saleData } = await supabase
+          .from('sales_part')
+          .select('*')
+          .ilike('id', cleanId)
+          .single();
+
+        // If not found and cleanId is just digits, try searching suffix or partial ID
+        if (!saleData && /^\d+$/.test(cleanId)) {
+          const { data: matchedSales } = await supabase
+            .from('sales_part')
+            .select('*')
+            .ilike('id', `%${cleanId}%`)
+            .order('date', { ascending: false })
+            .limit(1);
+
+          if (matchedSales && matchedSales.length > 0) {
+            saleData = matchedSales[0];
+          }
+        }
+
+        if (!saleData) {
+          // Check if it was cancelled previously
+          try {
+            const cancelledLogs = JSON.parse(localStorage.getItem('pos_cancelled_parts_sales') || '[]');
+            const wasCancelled = cancelledLogs.find(
+              (c) => c.id === cleanId || (c.id && c.id.toUpperCase().includes(cleanId))
+            );
+            if (wasCancelled) {
+              const cancelDate = wasCancelled.cancelledAt
+                ? new Date(wasCancelled.cancelledAt).toLocaleString('th-TH')
+                : 'ก่อนหน้านี้';
+              setSearchError(
+                `❌ บิลเลขที่ ${wasCancelled.id} ได้รับการยกเลิกและคืนอะไหล่เข้าสต็อกไปแล้ว (${cancelDate})`
+              );
+              setIsSearchingSale(false);
+              return;
+            }
+          } catch (e) {
+            // Ignore
+          }
+
+          setSearchError(`❌ ไม่พบบิลเลขที่ "${cleanId}" ในระบบ กรุณาตรวจสอบเลขที่บิลอีกครั้ง`);
+          setIsSearchingSale(false);
+          return;
+        }
+
+        // Fetch sale items
+        const { data: itemsData, error: itemsErr } = await supabase
+          .from('sale_items_part')
+          .select('*')
+          .eq('sale_id', saleData.id);
+
+        if (itemsErr) throw itemsErr;
+
+        // Map items with current stock info from parts
+        const mappedItems = (itemsData || []).map((it) => {
+          const partCode = String(it.product_id || '').trim();
+          const currentPart = parts.find(
+            (p) => String(p.part_code || '').trim() === partCode || String(p.id) === String(it.product_id)
+          );
+          const currentStock = currentPart ? Number(currentPart.quantity || 0) : 0;
+          const returnQty = Number(it.quantity || 0);
+          return {
+            ...it,
+            partCode,
+            name: it.product_name?.replace(/\[.*?\]/, '').trim() || it.product_name,
+            currentStock,
+            newStock: currentStock + returnQty,
+            unit: it.unit || currentPart?.unit || DEFAULT_PART_UNIT,
+            partId: currentPart?.id,
+          };
+        });
+
+        setFoundSale(saleData);
+        setFoundSaleItems(mappedItems);
+      } catch (err) {
+        console.error('Search sale error:', err);
+        setSearchError('เกิดข้อผิดพลาดในการดึงข้อมูลบิล: ' + (err.message || ''));
+      } finally {
+        setIsSearchingSale(false);
+      }
+    },
+    [parts]
+  );
+
+  const handleExecuteCancelSale = useCallback(
+    async (saleToCancel, saleItems) => {
+      if (!saleToCancel) return;
+
+      const itemsSummary = (saleItems || [])
+        .map((it) => {
+          const name = it.name || it.product_name || it.partCode;
+          return `• <b>${name}</b> (${it.partCode}) : คืน <b>+${it.quantity} ${it.unit}</b> (สต็อกปัจจุบัน: ${it.currentStock} ➔ <b>${it.newStock}</b>)`;
+        })
+        .join('<br/>');
+
+      const result = await Swal.fire({
+        title: `⚠️ ยืนยันยกเลิกบิล ${saleToCancel.id}?`,
+        html: `
+          <div style="text-align: left; font-size: 13.5px; line-height: 1.6; color: #cbd5e1;">
+            <p>ลูกค้า: <b>${saleToCancel.customer_name || 'ลูกค้าทั่วไป'}</b></p>
+            <p>ยอดเงิน: <b style="color: #10b981;">฿${Number(saleToCancel.total || 0).toLocaleString()}</b></p>
+            <hr style="border: 0; border-top: 1px solid #334155; margin: 10px 0;"/>
+            <p style="font-weight: bold; color: #f59e0b;">📦 รายการอะไหล่ที่จะบวกคืนเข้าสต็อก (${saleItems.length} รายการ):</p>
+            <div style="background: #0f172a; padding: 10px; border-radius: 8px; margin: 8px 0; font-size: 13px; max-height: 180px; overflow-y: auto;">
+              ${itemsSummary || 'ไม่มีรายการอะไหล่'}
+            </div>
+            <p style="color: #ef4444; font-size: 12.5px; margin-top: 8px;">
+              * เมื่อกดยืนยัน ระบบจะปรับยอดสต็อกอะไหล่เพิ่มขึ้นทันที และลบบิล ${saleToCancel.id} ออกจากระบบ
+            </p>
+          </div>
+        `,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: '🗑️ ยืนยันยกเลิกบิลและคืนสต็อก',
+        cancelButtonText: 'ยกเลิก',
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#4b5563',
+        background: '#1a1b26',
+        color: '#f3f4f6',
+      });
+
+      if (!result.isConfirmed) return;
+
+      setIsCancellingSale(true);
+      try {
+        const restoredItemsLog = [];
+
+        // 1. Restore stock atomically for each part in 'parts' table
+        for (const item of saleItems) {
+          const partCode = String(item.partCode || item.product_id || '').trim();
+          let targetPart = parts.find((p) => String(p.part_code || '').trim() === partCode);
+
+          if (!targetPart) {
+            const { data: dbPart } = await supabase
+              .from('parts')
+              .select('*')
+              .eq('part_code', partCode)
+              .single();
+            targetPart = dbPart;
+          }
+
+          const qtyToReturn = Number(item.quantity || 0);
+          if (targetPart && targetPart.id && qtyToReturn > 0) {
+            const { error: adjustErr } = await adjustPartStockAtomic({
+              partId: targetPart.id,
+              delta: qtyToReturn, // Positive delta returns stock!
+            });
+            if (adjustErr) {
+              console.error(`Failed to adjust stock for part ${targetPart.part_code}:`, adjustErr);
+            }
+            restoredItemsLog.push({
+              code: targetPart.part_code,
+              name: targetPart.name,
+              qty: qtyToReturn,
+              unit: targetPart.unit || item.unit || DEFAULT_PART_UNIT,
+              newStock: Number(targetPart.quantity || 0) + qtyToReturn,
+            });
+          }
+        }
+
+        // 2. Delete items from 'sale_items_part'
+        await supabase.from('sale_items_part').delete().eq('sale_id', saleToCancel.id);
+
+        // 3. Delete sale from 'sales_part'
+        await supabase.from('sales_part').delete().eq('id', saleToCancel.id);
+
+        // 4. Save to cancelled log in localStorage
+        try {
+          const existingLogs = JSON.parse(localStorage.getItem('pos_cancelled_parts_sales') || '[]');
+          existingLogs.unshift({
+            id: saleToCancel.id,
+            cancelledAt: new Date().toISOString(),
+            customerName: saleToCancel.customer_name || '-',
+            total: saleToCancel.total,
+            itemsCount: saleItems.length,
+            restoredItems: restoredItemsLog,
+          });
+          localStorage.setItem('pos_cancelled_parts_sales', JSON.stringify(existingLogs.slice(0, 100)));
+        } catch (e) {
+          console.warn('Could not save to cancelled log:', e);
+        }
+
+        // 5. Re-fetch parts so PartsPOS table immediately updates stock
+        await fetchParts();
+
+        // 6. Close modal & show success alert
+        setShowCancelModal(false);
+        setFoundSale(null);
+        setFoundSaleItems([]);
+        setCancelSearchId('');
+
+        const returnDetailsText = restoredItemsLog
+          .map((r) => `• <b>${r.name}</b> (${r.code}): คืน <b>+${r.qty} ${r.unit}</b> ➔ สต็อกคงเหลือ: <b>${r.newStock}</b>`)
+          .join('<br/>');
+
+        Swal.fire({
+          icon: 'success',
+          title: 'ยกเลิกบิลและคืนสต็อกสำเร็จ!',
+          html: `
+            <div style="text-align: left; font-size: 13.5px; line-height: 1.6; color: #cbd5e1;">
+              <p>ยกเลิกบิลเลขที่: <b style="color: #60a5fa;">${saleToCancel.id}</b></p>
+              <p>ยอดเงิน: <b>฿${Number(saleToCancel.total || 0).toLocaleString()}</b></p>
+              <hr style="border: 0; border-top: 1px solid #334155; margin: 8px 0;"/>
+              <p style="color: #34d399; font-weight: bold;">📦 คืนสต็อกอะไหล่เรียบร้อยแล้ว:</p>
+              <div style="background: #0f172a; padding: 10px; border-radius: 8px; margin: 6px 0; font-size: 13px; max-height: 180px; overflow-y: auto;">
+                ${returnDetailsText || 'คืนอะไหล่เข้าสต็อกเรียบร้อยแล้ว'}
+              </div>
+            </div>
+          `,
+          confirmButtonColor: '#10b981',
+          confirmButtonText: 'ตกลง',
+          background: '#1a1b26',
+          color: '#f3f4f6',
+        });
+      } catch (err) {
+        console.error('Cancel sale error:', err);
+        showAlert('เกิดข้อผิดพลาด', err.message || 'ไม่สามารถยกเลิกบิลได้', 'error');
+      } finally {
+        setIsCancellingSale(false);
+      }
+    },
+    [parts, fetchParts]
+  );
+
   return (
     <div className="pos-container">
       <Toast message={toast.message} type={toast.type} show={toast.show} />
@@ -740,6 +1040,16 @@ const PartsPOS = () => {
               </button>
             )}
           </div>
+
+          {/* ปุ่มยกเลิกบิล/คืนอะไหล่ (รหัสผ่าน 45500) */}
+          <button
+            type="button"
+            className="pos-cancel-sale-btn"
+            onClick={handleOpenCancelModal}
+            title="ยกเลิกบิลและคืนอะไหล่เข้าสต็อก (รหัสผ่าน 45500)"
+          >
+            ↩️ ยกเลิกบิล/คืนอะไหล่
+          </button>
 
           {/* Local Images Status Toolbar */}
           <LocalImageToolbar />
@@ -1696,6 +2006,203 @@ const PartsPOS = () => {
       {/* Receipt Modal */}
       {showReceipt && lastSale && (
         <Receipt sale={lastSale} onClose={() => setShowReceipt(false)} />
+      )}
+
+      {/* ── Cancel Parts Sale Modal (ยกเลิกบิลและคืนอะไหล่เข้าสต็อก) ── */}
+      {showCancelModal && (
+        <div
+          className="cps-modal-overlay"
+          onClick={() => !isCancellingSale && setShowCancelModal(false)}
+        >
+          <div className="cps-modal-box" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="cps-modal-header">
+              <div className="cps-header-title-wrap">
+                <span className="cps-header-icon">↩️</span>
+                <div>
+                  <h3 className="cps-header-title">ยกเลิกบิล / คืนอะไหล่เข้าสต็อก</h3>
+                  <span className="cps-header-subtitle">
+                    ระบุเลขที่ใบเสร็จ IVS เพื่อยกเลิกบิลและนำจำนวนอะไหล่บวกกลับเข้าสต็อกอัตโนมัติ
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="cps-modal-close"
+                onClick={() => !isCancellingSale && setShowCancelModal(false)}
+                disabled={isCancellingSale}
+                title="ปิดหน้าต่าง"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="cps-modal-body">
+              {/* Search Input Section */}
+              <div className="cps-search-section">
+                <label className="cps-search-label">
+                  🔎 ระบุเลขที่ใบเสร็จที่จะยกเลิก:
+                </label>
+                <div className="cps-search-input-row">
+                  <input
+                    type="text"
+                    className="cps-search-input"
+                    placeholder="เช่น IVS6911-070 หรือ 070..."
+                    value={cancelSearchId}
+                    onChange={(e) => setCancelSearchId(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSearchSaleToCancel(cancelSearchId);
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    className="cps-search-btn"
+                    onClick={() => handleSearchSaleToCancel(cancelSearchId)}
+                    disabled={isSearchingSale || !cancelSearchId.trim()}
+                  >
+                    {isSearchingSale ? '⏳ กำลังค้นหา...' : '🔍 ค้นหาบิล'}
+                  </button>
+                </div>
+
+                {/* Quick Select Recent Bills */}
+                {recentSales.length > 0 && (
+                  <div className="cps-recent-chips">
+                    <span className="cps-recent-label">📋 บิลขายล่าสุด (คลิกเพื่อเลือกบิล):</span>
+                    <div className="cps-chips-list">
+                      {recentSales.map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          className={`cps-chip ${cancelSearchId === r.id ? 'active' : ''}`}
+                          onClick={() => {
+                            setCancelSearchId(r.id);
+                            handleSearchSaleToCancel(r.id);
+                          }}
+                        >
+                          <b>{r.id}</b> ({r.customer_name || 'ลูกค้าทั่วไป'} - ฿{Number(r.total || 0).toLocaleString()})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Error message */}
+              {searchError && (
+                <div className="cps-alert-error">
+                  <span className="cps-error-icon">⚠️</span>
+                  <span>{searchError}</span>
+                </div>
+              )}
+
+              {/* Found Sale Details & Items */}
+              {foundSale && (
+                <div className="cps-sale-card">
+                  <div className="cps-sale-header">
+                    <div className="cps-sale-title-wrap">
+                      <span className="cps-sale-badge">🧾 {foundSale.id}</span>
+                      <span className="cps-sale-date">
+                        📅 วันที่: {new Date(foundSale.date).toLocaleString('th-TH')}
+                      </span>
+                    </div>
+                    <div className="cps-sale-total">
+                      ยอดรวม: <b>฿{Number(foundSale.total || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</b>
+                    </div>
+                  </div>
+
+                  <div className="cps-sale-meta-grid">
+                    <div>
+                      <span className="cps-meta-lbl">ลูกค้า:</span>{' '}
+                      <b>{foundSale.customer_name || 'ลูกค้าทั่วไป'}</b>
+                    </div>
+                    <div>
+                      <span className="cps-meta-lbl">เบอร์โทร:</span>{' '}
+                      {foundSale.customer_phone || '-'}
+                    </div>
+                    <div>
+                      <span className="cps-meta-lbl">ผู้ขาย:</span>{' '}
+                      {foundSale.salesperson || 'หน้าร้าน'}
+                    </div>
+                    <div>
+                      <span className="cps-meta-lbl">การชำระเงิน:</span>{' '}
+                      {foundSale.payment_method === 'cash' ? '💵 เงินสด' : '📱 โอน/QR'}
+                    </div>
+                  </div>
+
+                  {/* Items Table with Stock Return Indicator */}
+                  <div className="cps-items-section">
+                    <div className="cps-items-title">
+                      📦 รายการอะไหล่ที่จะบวกคืนเข้าสต็อก ({foundSaleItems.length} รายการ):
+                    </div>
+                    <table className="cps-items-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: '8%', textAlign: 'center' }}>ลำดับ</th>
+                          <th style={{ width: '22%', textAlign: 'center' }}>รหัสอะไหล่</th>
+                          <th style={{ width: '38%', textAlign: 'left' }}>รายการอะไหล่</th>
+                          <th style={{ width: '14%', textAlign: 'center' }}>จำนวนที่ขาย</th>
+                          <th style={{ width: '18%', textAlign: 'center' }}>การปรับสต็อก</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {foundSaleItems.map((item, idx) => (
+                          <tr key={item.id || idx}>
+                            <td style={{ textAlign: 'center' }}>{idx + 1}</td>
+                            <td style={{ textAlign: 'center', fontFamily: 'monospace', fontWeight: 'bold', color: '#93c5fd' }}>
+                              {item.partCode || item.product_id}
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: '600', color: '#f8fafc' }}>
+                                {item.name}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                                ราคา: ฿{Number(item.sell_price || 0).toLocaleString()} / {item.unit}
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#f87171' }}>
+                              -{item.quantity} {item.unit}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span className="cps-stock-return-pill">
+                                {item.currentStock} ➔ <b style={{ color: '#34d399' }}>{item.newStock}</b>
+                                <span className="cps-return-badge">+{item.quantity}</span>
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Warning Callout */}
+                  <div className="cps-warning-callout">
+                    <span className="cps-warning-icon">⚠️</span>
+                    <div className="cps-warning-text">
+                      <b>คำเตือน:</b> เมื่อกดยืนยัน ระบบจะทำการ<b>บวกสต็อกอะไหล่ทุกชิ้นในบิลนี้คืนเข้าคลังทันที</b> และลบบิล <b>{foundSale.id}</b> ออกจากระบบ
+                    </div>
+                  </div>
+
+                  {/* Confirm Cancel Button */}
+                  <div className="cps-action-footer">
+                    <button
+                      type="button"
+                      className="cps-cancel-confirm-btn"
+                      onClick={() => handleExecuteCancelSale(foundSale, foundSaleItems)}
+                      disabled={isCancellingSale}
+                    >
+                      {isCancellingSale ? '⏳ กำลังยกเลิกบิลและคืนสต็อก...' : `🗑️ ยืนยันยกเลิกบิล ${foundSale.id} และคืนสต็อกอะไหล่`}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

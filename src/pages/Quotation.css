@@ -136,6 +136,85 @@
   font-weight: 600;
 }
 
+/* ─── Auto Cleanup Banner & Toolbar Actions ─── */
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn-cleanup-quotations {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-cleanup-quotations:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: #ef4444;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.btn-cleanup-quotations:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.quotation-auto-cleanup-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.12), rgba(99, 102, 241, 0.08));
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 12px;
+  padding: 12px 18px;
+  margin-bottom: 18px;
+  color: #cbd5e1;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.quotation-auto-cleanup-banner .banner-icon {
+  font-size: 18px;
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.quotation-auto-cleanup-banner strong {
+  color: #93c5fd;
+}
+
+/* Expiry pill for table rows */
+.expiry-pill {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  font-weight: 500;
+}
+
+.expiry-pill.expiring-soon {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.4);
+  font-weight: 600;
+}
+
 /* ─── History Table ─── */
 .table-wrapper {
   background: #151823;

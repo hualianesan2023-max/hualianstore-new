@@ -6,6 +6,7 @@ import {
   adjustProductStockAtomic,
   getThaiYearMonth,
 } from '../utils/concurrency';
+import { cleanupExpiredQuotations } from '../utils/quotationCleanup';
 
 // Round to 3 decimals (supports fractional stock like 0.5 kg without float drift)
 const r3 = (n) => Math.round(Number(n || 0) * 1000) / 1000;
@@ -1333,14 +1334,21 @@ export function StoreProvider({ children }) {
 
   // Load all initial database records on mount & keep sales synced across machines
   useEffect(() => {
+    // Auto-cleanup expired quotations (>30 days / 1 month) on startup
+    cleanupExpiredQuotations({ maxAgeDays: 30 }).catch((err) =>
+      console.warn('[AutoCleanup] startup warning:', err)
+    );
+
     refreshData();
 
     const handleFocus = () => {
       refreshSales();
+      cleanupExpiredQuotations({ maxAgeDays: 30 }).catch(console.warn);
     };
     window.addEventListener('focus', handleFocus);
     const intervalId = setInterval(() => {
       refreshSales();
+      cleanupExpiredQuotations({ maxAgeDays: 30 }).catch(console.warn);
     }, 20000);
 
     return () => {
