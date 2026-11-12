@@ -6,7 +6,7 @@ import './Customers.css';
 import { showAlert, showConfirm } from '../utils/alerts';
 
 const Customers = () => {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, refreshSales } = useStore();
   const { customers = [] } = state;
 
   // State
@@ -15,7 +15,76 @@ const Customers = () => {
   const [currentCustomer, setCurrentCustomer] = useState(null); // null for add, object for edit
   const [toastMessage, setToastMessage] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [isSyncing, setIsSyncing] = useState(false);
   const itemsPerPage = 25;
+
+  // Sync from Supabase on mount
+  useEffect(() => {
+    if (refreshSales) {
+      refreshSales();
+    }
+  }, [refreshSales]);
+
+  // Realtime subscription for Supabase customers table
+  useEffect(() => {
+    if (!supabase || typeof supabase.channel !== 'function') return;
+
+    const channel = supabase
+      .channel('customers_page_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'customers' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new;
+            dispatch({
+              type: 'ADD_CUSTOMER',
+              payload: {
+                id: row.id,
+                name: row.name,
+                phone: row.phone || '-',
+                address: row.address || '-',
+                taxId: row.tax_id || '-',
+              }
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const row = payload.new;
+            dispatch({
+              type: 'UPDATE_CUSTOMER',
+              payload: {
+                id: row.id,
+                name: row.name,
+                phone: row.phone || '-',
+                address: row.address || '-',
+                taxId: row.tax_id || '-',
+              }
+            });
+          } else if (payload.eventType === 'DELETE') {
+            const delId = payload.old?.id || payload.old?.ID;
+            if (delId) {
+              dispatch({ type: 'DELETE_CUSTOMER', payload: delId });
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [dispatch]);
+
+  const handleSyncNow = async () => {
+    setIsSyncing(true);
+    try {
+      if (refreshSales) await refreshSales();
+      showToast('🔄 ซิงค์ข้อมูลลูกค้าจาก Supabase เรียบร้อยแล้ว');
+    } catch (e) {
+      console.warn('Sync customers error:', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Import Excel State
   const [showImportModal, setShowImportModal] = useState(false);
@@ -32,6 +101,7 @@ const Customers = () => {
 
   // Form State
   const [form, setForm] = useState({
+    id: '',
     name: '',
     phone: '',
     taxId: '',
@@ -48,9 +118,11 @@ const Customers = () => {
     const query = searchQuery.toLowerCase().trim();
     if (!query) return true;
     return (
+      (customer.id && customer.id.toLowerCase().includes(query)) ||
       (customer.name && customer.name.toLowerCase().includes(query)) ||
       (customer.phone && customer.phone.includes(query)) ||
-      (customer.taxId && customer.taxId.includes(query))
+      (customer.taxId && customer.taxId.includes(query)) ||
+      (customer.address && customer.address.toLowerCase().includes(query))
     );
   });
 
@@ -61,10 +133,45 @@ const Customers = () => {
     return filteredCustomers.slice(startIndex, startIndex + itemsPerPage);
   }, [filteredCustomers, currentPage]);
 
+  const generateCustomerId = async (customersList, offset = 0) => {
+    const prefix = 'XL-';
+    let maxNum = 0;
+    try {
+      const { data } = await supabase
+        .from('customers')
+        .select('id')
+        .ilike('id', `${prefix}%`)
+        .order('id', { ascending: false })
+        .limit(20);
+      if (data && data.length > 0) {
+        data.forEach((c) => {
+          const num = parseInt(String(c.id).slice(prefix.length), 10);
+          if (!isNaN(num) && num > maxNum) maxNum = num;
+        });
+      }
+    } catch (e) {
+      console.warn('Live max customer id check error:', e);
+    }
+
+    (customersList || []).forEach((c) => {
+      if (c.id && String(c.id).toUpperCase().startsWith(prefix)) {
+        const numPartStr = String(c.id).slice(prefix.length);
+        const numPart = parseInt(numPartStr, 10);
+        if (!isNaN(numPart) && numPart > maxNum) {
+          maxNum = numPart;
+        }
+      }
+    });
+    const nextNum = maxNum + 1 + offset;
+    return `${prefix}${String(nextNum).padStart(5, '0')}`;
+  };
+
   // Open Modal for Add
-  const handleOpenAdd = () => {
+  const handleOpenAdd = async () => {
     setCurrentCustomer(null);
+    const candidateId = await generateCustomerId(customers);
     setForm({
+      id: candidateId,
       name: '',
       phone: '',
       taxId: '',
@@ -77,28 +184,13 @@ const Customers = () => {
   const handleOpenEdit = (customer) => {
     setCurrentCustomer(customer);
     setForm({
+      id: customer.id,
       name: customer.name || '',
       phone: customer.phone || '',
       taxId: customer.taxId || '',
       address: customer.address || '',
     });
     setShowModal(true);
-  };
-
-  const generateCustomerId = (customersList, offset = 0) => {
-    const prefix = 'XL-';
-    let maxNum = 0;
-    (customersList || []).forEach((c) => {
-      if (c.id && c.id.toUpperCase().startsWith(prefix)) {
-        const numPartStr = c.id.slice(prefix.length);
-        const numPart = parseInt(numPartStr, 10);
-        if (!isNaN(numPart) && numPart > maxNum) {
-          maxNum = numPart;
-        }
-      }
-    });
-    const nextNum = maxNum + 1 + offset;
-    return `${prefix}${String(nextNum).padStart(5, '0')}`;
   };
 
   // Download Sample Excel Template
@@ -269,7 +361,8 @@ const Customers = () => {
         .from('customers')
         .select('id')
         .ilike('id', `${prefix}%`)
-        .limit(10000);
+        .order('id', { ascending: false })
+        .limit(300);
       (liveCusts || customers || []).forEach((c) => {
         if (c.id && String(c.id).toUpperCase().startsWith(prefix)) {
           const n = parseInt(String(c.id).slice(prefix.length), 10);
@@ -295,6 +388,8 @@ const Customers = () => {
         type: 'ADD_CUSTOMERS_BULK',
         payload: safeImportList
       });
+
+      if (refreshSales) await refreshSales();
 
       showAlert('นำเข้าข้อมูลสำเร็จ! 🎉', `นำเข้าข้อมูลลูกค้าเรียบร้อยแล้วทั้งหมด ${safeImportList.length} รายการ`, 'success');
       setShowImportModal(false);
@@ -326,10 +421,10 @@ const Customers = () => {
           ...form,
         },
       });
-      showToast('💾 อัปเดตข้อมูลลูกค้าเรียบร้อยแล้ว');
+      showToast(`💾 อัปเดตข้อมูลลูกค้า ${currentCustomer.id} ลง Supabase เรียบร้อยแล้ว`);
     } else {
       // Add mode
-      const newId = generateCustomerId(customers);
+      const newId = form.id || (await generateCustomerId(customers));
       const newPayload = {
         id: newId,
         ...form,
@@ -338,7 +433,7 @@ const Customers = () => {
         type: 'ADD_CUSTOMER',
         payload: newPayload,
       });
-      showToast(`👤 เพิ่มลูกค้าใหม่ (${newPayload.id}) เรียบร้อยแล้ว`);
+      showToast(`👤 เพิ่มลูกค้าใหม่ (${newPayload.id}) ลง Supabase เรียบร้อยแล้ว`);
     }
 
     setShowModal(false);
@@ -347,17 +442,17 @@ const Customers = () => {
   // Handle Delete
   const handleDelete = async (id, name) => {
     const confirmed = await showConfirm(
-      `คุณต้องการลบลูกค้า "${name}" ใช่หรือไม่?`,
-      'ข้อมูลของลูกค้าจะถูกลบออกจากฐานข้อมูลอย่างถาวร',
+      `คุณต้องการลบลูกค้า "${name}" (${id}) ใช่หรือไม่?`,
+      'ข้อมูลจะถูกลบออกจากตาราง customers ใน Supabase ทันทีแบบเรียลไทม์',
       'ใช่, ลบเลย',
       'ยกเลิก'
     );
     if (confirmed) {
-      dispatch({
+      await dispatch({
         type: 'DELETE_CUSTOMER',
         payload: id,
       });
-      showToast('🗑️ ลบข้อมูลลูกค้าเรียบร้อยแล้ว');
+      showToast(`🗑️ ลบข้อมูลลูกค้า ${id} ออกจาก Supabase เรียบร้อยแล้ว`);
     }
   };
 
@@ -369,10 +464,29 @@ const Customers = () => {
       {/* Page Header */}
       <div className="page-header customers-header flex justify-between items-center" style={{ marginBottom: 'var(--space-lg)', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 className="page-title">👥 จัดการข้อมูลลูกค้า</h1>
-          <p className="page-subtitle">จัดการรายชื่อ ที่อยู่ เบอร์โทรศัพท์ และเลขประจำตัวผู้เสียภาษีของลูกค้า</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h1 className="page-title" style={{ margin: 0 }}>👥 จัดการข้อมูลลูกค้า</h1>
+            <span className="customers-realtime-pill" title="เชื่อมต่อ Realtime กับ Supabase เรียบร้อยแล้ว">
+              🟢 เรียลไทม์ (Supabase)
+            </span>
+          </div>
+          <p className="page-subtitle" style={{ marginTop: '4px' }}>
+            จัดการรายชื่อ ที่อยู่ เบอร์โทรศัพท์ และเลขประจำตัวผู้เสียภาษี (ตาราง <code>customers</code>)
+          </p>
         </div>
-        <div className="flex gap-sm" style={{ flexWrap: 'wrap' }}>
+        <div className="flex gap-sm items-center" style={{ flexWrap: 'wrap' }}>
+          <div className="customers-count-badge" title="จำนวนลูกค้าทั้งหมดที่ซิงค์จาก Supabase">
+            📊 ลูกค้าในระบบ: <strong>{customers.length.toLocaleString()}</strong> ราย
+          </div>
+          <button 
+            type="button" 
+            className="btn btn-secondary btn-sync-customers" 
+            onClick={handleSyncNow}
+            disabled={isSyncing}
+            title="กดเพื่อดึงข้อมูลล่าสุดจาก Supabase ทันที"
+          >
+            {isSyncing ? '⏳ กำลังซิงค์...' : '🔄 ซิงค์ Supabase'}
+          </button>
           <button 
             className="btn btn-secondary btn-import-excel" 
             onClick={() => { setPreviewList([]); setImportFileName(''); setShowImportModal(true); }}
@@ -392,7 +506,7 @@ const Customers = () => {
           <input
             type="text"
             className="input input-search"
-            placeholder="ค้นหาชื่อลูกค้า, เบอร์โทรศัพท์ หรือเลขผู้เสียภาษี..."
+            placeholder="ค้นหารหัสลูกค้า (XL-...), ชื่อลูกค้า, เบอร์โทรศัพท์ หรือเลขผู้เสียภาษี..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -535,6 +649,17 @@ const Customers = () => {
             
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
+                <div className="input-group">
+                  <label>รหัสลูกค้า (Customer ID)</label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={form.id || currentCustomer?.id || ''}
+                    disabled
+                    style={{ background: 'var(--bg-tertiary)', color: 'var(--accent-primary)', fontWeight: 'bold' }}
+                  />
+                </div>
+
                 <div className="input-group">
                   <label>ชื่อ-นามสกุล <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <input

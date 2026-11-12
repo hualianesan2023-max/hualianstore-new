@@ -83,11 +83,13 @@ export async function fetchNextDocumentId({
 
   let liveQuerySucceeded = false;
   try {
+    // Order descending to always capture the absolute highest numbers even when table exceeds 1,000 rows
     const { data, error } = await supabase
       .from(table)
       .select(column)
       .ilike(column, `${prefix}%`)
-      .range(0, 9999);
+      .order(column, { ascending: false })
+      .limit(500);
 
     if (!error && Array.isArray(data)) {
       liveQuerySucceeded = true;

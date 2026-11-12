@@ -682,6 +682,43 @@ async function fetchApi(subpath, method = 'GET', payload = null) {
   return fetch(url, fetchOptions);
 }
 
+// Helper to fetch ALL customers from Supabase using chunked pagination (>1,000 rows support)
+export async function fetchAllCustomersFromDB() {
+  const PAGE_SIZE = 1000;
+  let all = [];
+  let from = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('id', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        console.warn('[Customers] Fetch page error:', error);
+        break;
+      }
+      if (data && data.length > 0) {
+        all.push(...data);
+        if (data.length < PAGE_SIZE) {
+          hasMore = false;
+        } else {
+          from += PAGE_SIZE;
+        }
+      } else {
+        hasMore = false;
+      }
+    } catch (e) {
+      console.warn('[Customers] Exception fetching customers page:', e);
+      break;
+    }
+  }
+  return all;
+}
+
 // ======================================
 // Provider (API Connection Manager)
 // ======================================
@@ -706,13 +743,8 @@ export function StoreProvider({ children }) {
         .order('name', { ascending: true });
       if (catErr) throw catErr;
 
-      // 3. Fetch customers
-      const { data: dbCustomers, error: custErr } = await supabase
-        .from('customers')
-        .select('*')
-        .order('id', { ascending: true })
-        .range(0, 9999);
-      if (custErr) throw custErr;
+      // 3. Fetch ALL customers (paginated chunk fetch to guarantee >1000 records are all retrieved)
+      const dbCustomers = await fetchAllCustomersFromDB();
 
       // 4. Fetch promotions
       const { data: dbPromotions, error: promoErr } = await supabase
@@ -1131,7 +1163,7 @@ export function StoreProvider({ children }) {
         { data: dbSaleItems, error: itemsErr },
         { data: dbQuotations, error: quotErr },
         { data: dbQuotationItems, error: quotItemsErr },
-        { data: dbCustomers, error: custErr },
+        dbCustomers,
         { data: dbCustomerRepairs, error: repErr },
         { data: dbShopRepairs, error: shopErr },
         { data: dbCustomerDeliveries, error: delivErr },
@@ -1140,7 +1172,7 @@ export function StoreProvider({ children }) {
         supabase.from('sale_items').select('*').range(0, 9999),
         supabase.from('quotations').select('*').order('date', { ascending: false }).range(0, 4999),
         supabase.from('quotation_items').select('*').range(0, 9999),
-        supabase.from('customers').select('*').order('id', { ascending: true }).range(0, 9999),
+        fetchAllCustomersFromDB(),
         supabase.from('customer_repairs').select('*').order('id', { ascending: false }).range(0, 9999),
         supabase.from('shop_repairs').select('*').order('id', { ascending: false }).range(0, 9999),
         supabase.from('customer_deliveries').select('*').order('id', { ascending: false }).range(0, 9999),
@@ -1236,7 +1268,7 @@ export function StoreProvider({ children }) {
         dispatch({ type: ACTIONS.SET_QUOTATIONS, payload: mappedQuotations });
       }
 
-      if (!custErr && Array.isArray(dbCustomers) && dbCustomers.length > 0) {
+      if (Array.isArray(dbCustomers) && dbCustomers.length > 0) {
         const mappedCustomers = dbCustomers.map((row) => {
           const nameLower = (row.name || '').toLowerCase();
           const cleanTax = (row.tax_id || '').replace(/-/g, '').trim();
@@ -1326,6 +1358,31 @@ export function StoreProvider({ children }) {
             notes: r.notes || '',
           })),
         });
+      }
+
+      if (Array.isArray(dbCustomers) && dbCustomers.length > 0) {
+        const mappedCustomers = dbCustomers.map((row) => {
+          const nameLower = (row.name || '').toLowerCase();
+          const cleanTax = (row.tax_id || '').replace(/-/g, '').trim();
+          const isComp =
+            nameLower.includes('บริษัท') ||
+            nameLower.includes('บจก') ||
+            nameLower.includes('หจก') ||
+            nameLower.includes('ห้างหุ้นส่วน') ||
+            nameLower.includes('จำกัด') ||
+            nameLower.includes('co.,ltd') ||
+            nameLower.includes('corp') ||
+            (cleanTax.length === 13 && cleanTax !== '-');
+          return {
+            id: row.id,
+            name: row.name,
+            phone: row.phone || '-',
+            address: row.address || '-',
+            taxId: row.tax_id || '-',
+            type: isComp ? 'company' : 'general',
+          };
+        });
+        dispatch({ type: ACTIONS.SET_CUSTOMERS, payload: mappedCustomers });
       }
     } catch (err) {
       console.warn('refreshSales warning:', err);
@@ -1604,7 +1661,10 @@ export function StoreProvider({ children }) {
               }
             });
           } else if (payload.eventType === 'DELETE') {
-            dispatch({ type: ACTIONS.DELETE_CUSTOMER, payload: payload.old.id });
+            const delId = payload.old?.id || payload.old?.ID;
+            if (delId) {
+              dispatch({ type: ACTIONS.DELETE_CUSTOMER, payload: delId });
+            }
           }
         }
       )

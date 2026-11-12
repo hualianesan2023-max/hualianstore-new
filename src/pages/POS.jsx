@@ -650,6 +650,32 @@ const POS = () => {
     [normalisedProducts, showToast]
   );
 
+  // === Set Custom Item Price (ตรงตำแหน่งกรอบสีแดงในตะกร้า) ===
+  const setItemPrice = useCallback(
+    (cartItemId, rawValue) => {
+      const parsed = Math.round(parseFloat(rawValue) * 100) / 100;
+      if (!Number.isFinite(parsed) || parsed < 0) return;
+      setCart((prevCart) =>
+        prevCart.map((item) => {
+          if (item.id !== cartItemId) return item;
+          const product = normalisedProducts.find((p) => p.id === item.productId);
+          let newPriceType = 'custom';
+          if (product) {
+            if (parsed === Number(product.sellPrice || 0)) newPriceType = 'sell';
+            else if (parsed === Number(product.branchPrice || 0)) newPriceType = 'branch';
+          }
+          return {
+            ...item,
+            sellPrice: parsed,
+            priceType: newPriceType,
+            isCustomPrice: true,
+          };
+        })
+      );
+    },
+    [normalisedProducts]
+  );
+
   // === Change warehouse for a cart item ===
   const handleWarehouseChange = useCallback(
     (cartItemId, newLocation) => {
@@ -1394,9 +1420,9 @@ const POS = () => {
                             }}
                             style={{
                               background: '#0f1017',
-                              border: '1px solid #2e303a',
+                              border: '1px solid ' + (item.priceType === 'custom' ? '#10b981' : '#2e303a'),
                               borderRadius: '6px',
-                              color: '#a5b4fc',
+                              color: item.priceType === 'custom' ? '#34d399' : '#a5b4fc',
                               fontSize: '11px',
                               padding: '2px 6px',
                               outline: 'none',
@@ -1405,6 +1431,9 @@ const POS = () => {
                           >
                             <option value="sell">ราคาปกติ (฿{product.sellPrice?.toLocaleString()})</option>
                             <option value="branch">ราคาสาขา (฿{product.branchPrice?.toLocaleString()})</option>
+                            {item.priceType === 'custom' && (
+                              <option value="custom">ราคาพิเศษ (฿{item.sellPrice?.toLocaleString()})</option>
+                            )}
                           </select>
                         </div>
                       </div>
@@ -1439,9 +1468,66 @@ const POS = () => {
                         +
                       </button>
                     </div>
-                    <div className="cart-item-total">
-                      ฿{(applyVat && isVatInclusive ? (item.sellPrice * item.quantity) / 1.07 : item.sellPrice * item.quantity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+
+                    {/* Editable Price Box (ตรงตำแหน่งกรอบสีแดงที่ผู้ใช้ระบุ) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: '85px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          background: '#11121c',
+                          border: '1.5px solid #10b981',
+                          borderRadius: '6px',
+                          padding: '2px 6px',
+                          gap: '3px',
+                          boxShadow: '0 0 6px rgba(16, 185, 129, 0.25)'
+                        }}
+                        title="กรอกราคาที่จะขายเองได้ (คลิกเพื่อแก้ไข)"
+                      >
+                        <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 'bold' }}>฿</span>
+                        <input
+                          key={`${item.id}-${item.sellPrice}`}
+                          type="number"
+                          inputMode="decimal"
+                          step="any"
+                          min="0"
+                          defaultValue={item.sellPrice}
+                          onFocus={(e) => e.target.select()}
+                          onBlur={(e) => {
+                            const typed = e.target.value;
+                            if (typed !== '' && !isNaN(typed)) {
+                              const num = parseFloat(typed);
+                              if (num >= 0 && num !== item.sellPrice) {
+                                setItemPrice(item.id, num);
+                              }
+                            } else {
+                              e.target.value = item.sellPrice;
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur();
+                          }}
+                          style={{
+                            width: '68px',
+                            textAlign: 'right',
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#34d399',
+                            fontSize: '13.5px',
+                            fontWeight: '700',
+                            outline: 'none',
+                            padding: '0',
+                            MozAppearance: 'textfield'
+                          }}
+                        />
+                      </div>
+                      {Number(item.quantity) > 1 && (
+                        <span style={{ fontSize: '10.5px', color: '#9ca3af', marginTop: '2px' }}>
+                          รวม ฿{(item.sellPrice * item.quantity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      )}
                     </div>
+
                     <button
                       className="cart-item-remove"
                       onClick={() => removeFromCart(item.id)}

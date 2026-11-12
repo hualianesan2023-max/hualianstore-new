@@ -168,7 +168,7 @@ const Receipt = ({ sale, onClose }) => {
   );
 
   // Tabs: 'both' (ดูทั้ง 2 หน้า) | 'receipt' (หน้า 1 ใบเสร็จ) | 'shipping' (หน้า 2 ใบปะหน้า)
-  const [previewTab, setPreviewTab] = useState(isSparePartsSale ? 'both' : 'receipt');
+  const [previewTab, setPreviewTab] = useState('both');
   const [scale, setScale] = useState(0.62);
 
   // ── Calculate Viewport Scale ──────────────────────────────────
@@ -178,27 +178,34 @@ const Receipt = ({ sale, onClose }) => {
       const containerHeight = containerRef.current.clientHeight;
       const containerWidth = containerRef.current.clientWidth;
 
-      // A4 dimensions in pixels at 96dpi: width=794, height=1123
+      // A4 dimensions in pixels at 96dpi: portrait=794x1123, landscape=1123x794
       const a4Height = 1123;
       const a4Width = 794;
 
       if (previewTab === 'both') {
-        // Fit width comfortably so user can scroll through both pages
-        const scaleW = (containerWidth - 50) / a4Width;
-        const newScale = Math.min(Math.max(scaleW, 0.45), 0.76);
+        const targetW = isSparePartsSale ? a4Width : 1123;
+        const scaleW = (containerWidth - 50) / targetW;
+        const newScale = Math.min(Math.max(scaleW, 0.40), 0.72);
         setScale(newScale);
       } else if (previewTab === 'receipt') {
-        // Fit single page inside the available viewport
         const scaleH = (containerHeight - 50) / a4Height;
         const scaleW = (containerWidth - 40) / a4Width;
         const newScale = Math.min(scaleH, scaleW, 0.95);
         setScale(newScale);
       } else if (previewTab === 'shipping') {
-        // Shipping label is compact (~520px) so scale comfortably
-        const scaleH = (containerHeight - 50) / 520;
-        const scaleW = (containerWidth - 40) / a4Width;
-        const newScale = Math.min(scaleH, scaleW, 0.95);
-        setScale(Math.max(newScale, 0.65));
+        if (!isSparePartsSale) {
+          // Machine landscape: width=1123, height=794
+          const scaleH = (containerHeight - 50) / 794;
+          const scaleW = (containerWidth - 40) / 1123;
+          const newScale = Math.min(scaleH, scaleW, 0.95);
+          setScale(Math.max(newScale, 0.55));
+        } else {
+          // Spare parts compact
+          const scaleH = (containerHeight - 50) / 520;
+          const scaleW = (containerWidth - 40) / a4Width;
+          const newScale = Math.min(scaleH, scaleW, 0.95);
+          setScale(Math.max(newScale, 0.65));
+        }
       }
     };
 
@@ -208,7 +215,7 @@ const Receipt = ({ sale, onClose }) => {
       clearTimeout(timer);
       window.removeEventListener('resize', updateScale);
     };
-  }, [sale, previewTab]);
+  }, [sale, previewTab, isSparePartsSale]);
 
   // Handle print active class and native Ctrl+P listeners
   useEffect(() => {
@@ -216,15 +223,26 @@ const Receipt = ({ sale, onClose }) => {
 
     const handleBeforePrint = () => {
       document.body.classList.remove('print-receipt-only', 'print-shipping-only');
+      const oldStyle = document.getElementById('dynamic-print-orientation');
+      if (oldStyle) oldStyle.remove();
+
       if (previewTab === 'receipt') {
         document.body.classList.add('print-receipt-only');
       } else if (previewTab === 'shipping') {
         document.body.classList.add('print-shipping-only');
+        if (!isSparePartsSale) {
+          const styleEl = document.createElement('style');
+          styleEl.id = 'dynamic-print-orientation';
+          styleEl.innerHTML = `@page { size: A4 landscape !important; margin: 0 !important; }`;
+          document.head.appendChild(styleEl);
+        }
       }
     };
 
     const handleAfterPrint = () => {
       document.body.classList.remove('print-receipt-only', 'print-shipping-only');
+      const s = document.getElementById('dynamic-print-orientation');
+      if (s) s.remove();
     };
 
     window.addEventListener('beforeprint', handleBeforePrint);
@@ -232,22 +250,35 @@ const Receipt = ({ sale, onClose }) => {
 
     return () => {
       document.body.classList.remove('print-receipt-active', 'print-receipt-only', 'print-shipping-only');
+      const s = document.getElementById('dynamic-print-orientation');
+      if (s) s.remove();
       window.removeEventListener('beforeprint', handleBeforePrint);
       window.removeEventListener('afterprint', handleAfterPrint);
     };
-  }, [previewTab]);
+  }, [previewTab, isSparePartsSale]);
 
   // ── Print Handlers ───────────────────────────────────────────
   const handlePrint = (mode = 'both') => {
     document.body.classList.remove('print-receipt-only', 'print-shipping-only');
+    const oldStyle = document.getElementById('dynamic-print-orientation');
+    if (oldStyle) oldStyle.remove();
+
     if (mode === 'receipt') {
       document.body.classList.add('print-receipt-only');
     } else if (mode === 'shipping') {
       document.body.classList.add('print-shipping-only');
+      if (!isSparePartsSale) {
+        const styleEl = document.createElement('style');
+        styleEl.id = 'dynamic-print-orientation';
+        styleEl.innerHTML = `@page { size: A4 landscape !important; margin: 0 !important; }`;
+        document.head.appendChild(styleEl);
+      }
     }
 
     const cleanup = () => {
       document.body.classList.remove('print-receipt-only', 'print-shipping-only');
+      const s = document.getElementById('dynamic-print-orientation');
+      if (s) s.remove();
       window.removeEventListener('afterprint', cleanup);
     };
     window.addEventListener('afterprint', cleanup);
@@ -291,42 +322,42 @@ const Receipt = ({ sale, onClose }) => {
             <span className="receipt-modal-icon">🖨️</span>
             <div>
               <h3 className="receipt-modal-main-title">
-                {isSparePartsSale ? `พิมพ์เอกสารการขายอะไหล่ #${sale.id}` : `พิมพ์ใบเสร็จรับเงิน #${sale.id}`}
+                {isSparePartsSale
+                  ? `พิมพ์เอกสารการขายอะไหล่ #${sale.id}`
+                  : `พิมพ์เอกสารการขายเครื่องจักร #${sale.id}`}
               </h3>
               <span className="receipt-modal-sub-title">
                 {isSparePartsSale
                   ? 'หน้า 1: ใบเสร็จรับเงิน A4  |  หน้า 2: ใบปะหน้ากล่องพัสดุ'
-                  : 'ใบเสร็จรับเงิน / ใบกำกับภาษีอย่างย่อ (A4)'}
+                  : 'หน้า 1: ใบเสร็จรับเงิน A4  |  หน้า 2: ใบปะหน้ากล่องพัสดุเครื่องจักร (แนวนอนเต็มหน้า)'}
               </span>
             </div>
           </div>
 
-          {/* View Mode Tabs (Screen Preview - เฉพาะรายการอะไหล่ที่มี 2 หน้า) */}
-          {isSparePartsSale && (
-            <div className="receipt-view-tabs">
-              <button
-                type="button"
-                className={`receipt-view-tab ${previewTab === 'both' ? 'active' : ''}`}
-                onClick={() => setPreviewTab('both')}
-              >
-                📑 ดูทั้ง 2 หน้า
-              </button>
-              <button
-                type="button"
-                className={`receipt-view-tab ${previewTab === 'receipt' ? 'active' : ''}`}
-                onClick={() => setPreviewTab('receipt')}
-              >
-                📄 หน้า 1: ใบเสร็จ
-              </button>
-              <button
-                type="button"
-                className={`receipt-view-tab ${previewTab === 'shipping' ? 'active' : ''}`}
-                onClick={() => setPreviewTab('shipping')}
-              >
-                📦 หน้า 2: ใบปะหน้ากล่อง
-              </button>
-            </div>
-          )}
+          {/* View Mode Tabs (Screen Preview - รองรับทั้งอะไหล่และเครื่องจักร) */}
+          <div className="receipt-view-tabs">
+            <button
+              type="button"
+              className={`receipt-view-tab ${previewTab === 'both' ? 'active' : ''}`}
+              onClick={() => setPreviewTab('both')}
+            >
+              📑 ดูทั้ง 2 หน้า
+            </button>
+            <button
+              type="button"
+              className={`receipt-view-tab ${previewTab === 'receipt' ? 'active' : ''}`}
+              onClick={() => setPreviewTab('receipt')}
+            >
+              📄 หน้า 1: ใบเสร็จ
+            </button>
+            <button
+              type="button"
+              className={`receipt-view-tab ${previewTab === 'shipping' ? 'active' : ''}`}
+              onClick={() => setPreviewTab('shipping')}
+            >
+              📦 {isSparePartsSale ? 'หน้า 2: ใบปะหน้ากล่อง' : 'หน้า 2: ใบปะหน้า (แนวนอน)'}
+            </button>
+          </div>
 
           <button
             type="button"
@@ -651,140 +682,180 @@ const Receipt = ({ sale, onClose }) => {
             </div>
 
             {/* ═══════════════════════════════════════════════════════ */}
-            {/* ── PAGE 2: ใบปะหน้ากล่องพัสดุ (เฉพาะรายการขายอะไหล่) ──── */}
+            {/* ── PAGE 2: ใบปะหน้ากล่องพัสดุ (อะไหล่ หรือ เครื่องจักร) ── */}
             {/* ═══════════════════════════════════════════════════════ */}
-            {isSparePartsSale && (
+            <div
+              className={`receipt-paper-wrapper receipt-wrapper-page-2 ${
+                !isSparePartsSale ? 'receipt-machine-landscape' : ''
+              } ${previewTab === 'receipt' ? 'screen-hidden-tab' : ''}`}
+              style={{
+                width: !isSparePartsSale ? `${1123 * scale}px` : `${794 * scale}px`,
+                height: !isSparePartsSale
+                  ? `${794 * scale}px`
+                  : previewTab === 'shipping'
+                  ? 'auto'
+                  : `${1123 * scale}px`,
+              }}
+            >
+              {previewTab === 'both' && (
+                <div className="receipt-page-indicator shipping-indicator">
+                  📦 หน้า 2 : {isSparePartsSale ? 'ใบปะหน้ากล่องพัสดุ (สำหรับติดหน้ากล่อง)' : 'ใบปะหน้ากล่องพัสดุเครื่องจักร (แนวนอนเต็มหน้า)'}
+                </div>
+              )}
+
               <div
-                className={`receipt-paper-wrapper receipt-wrapper-page-2 ${
-                  previewTab === 'receipt' ? 'screen-hidden-tab' : ''
-                }`}
+                className={`receipt-paper receipt-page-2 ${isSparePartsSale ? '' : 'shipping-landscape'}`}
                 style={{
-                  width: `${794 * scale}px`,
-                  height: previewTab === 'shipping' ? 'auto' : `${1123 * scale}px`,
+                  transform: `scale(${scale})`,
+                  transformOrigin: 'top left',
                 }}
               >
-                {previewTab === 'both' && (
-                  <div className="receipt-page-indicator shipping-indicator">
-                    📦 หน้า 2 : ใบปะหน้ากล่องพัสดุ (สำหรับติดหน้ากล่อง)
+                {/* ── Shipping Header ── */}
+                <div className="shipping-header">
+                  <div className="shipping-logo-wrap">
+                    <img src={logoImg} alt="HUALIAN Logo" className="shipping-logo" />
+                    <div className="shipping-company-titles">
+                      <h2 className="shipping-company-name">
+                        {store.name || 'ห้างหุ้นส่วนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.'}
+                      </h2>
+                      <p className="shipping-company-sub">
+                        ศูนย์จำหน่ายเครื่องจักรบรรจุภัณฑ์และอะไหล่แท้ HUALIAN มาตรฐานโรงงาน
+                      </p>
+                    </div>
+                  </div>
+                  <div className="shipping-doc-badge">
+                    <div className="shipping-badge-title">
+                      📦 {isSparePartsSale ? 'ใบปะหน้ากล่องพัสดุ' : 'ใบปะหน้ากล่องพัสดุ (เครื่องจักร)'}
+                    </div>
+                    <div className="shipping-badge-en">PARCEL SHIPPING LABEL</div>
+                    <div className="shipping-barcode-wrap">
+                      <BarcodeSvg value={sale.id} />
+                      <span className="shipping-barcode-text">*{sale.id}*</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Sender & Order Info Grid ── */}
+                <div className="shipping-info-grid">
+                  {/* Left: Sender Card */}
+                  <div className="shipping-card shipping-sender-card">
+                    <div className="shipping-card-header sender-header">
+                      <span className="card-tag">📌 ผู้ส่ง (FROM / SENDER)</span>
+                    </div>
+                    <div className="shipping-card-body">
+                      <div className="shipping-party-name">
+                        {store.name || 'ห้างหุ้นส่วนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.'}
+                      </div>
+                      <div className="shipping-party-address">
+                        {store.address ||
+                          'สำนักงานใหญ่ : 841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000'}
+                      </div>
+                      <div className="shipping-party-phone font-bold">
+                        📞 โทร: {store.phone || '044-002716 , 085-4957093'}
+                      </div>
+                      <div className="shipping-sender-staff">
+                        {isSparePartsSale ? 'ผู้จัดเตรียมพัสดุ:' : 'ผู้จัดเตรียมเครื่องจักร:'} <b>{sale.employee || 'หน้าร้าน'}</b>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Order Meta Card */}
+                  <div className="shipping-card shipping-order-card">
+                    <div className="shipping-card-header order-header">
+                      <span className="card-tag">📋 ข้อมูลการจัดส่ง (SHIPMENT DETAILS)</span>
+                    </div>
+                    <div className="shipping-card-body">
+                      <div className="shipping-meta-row">
+                        <span className="lbl">เลขที่คำสั่งซื้อ:</span>
+                        <span className="val font-bold text-blue">{sale.id}</span>
+                      </div>
+                      <div className="shipping-meta-row">
+                        <span className="lbl">วันที่จัดส่ง:</span>
+                        <span className="val">{formatDateThaiShort(sale.date)}</span>
+                      </div>
+                      <div className="shipping-meta-row">
+                        <span className="lbl">เวลาที่พิมพ์:</span>
+                        <span className="val">{formatPrintTimestamp()}</span>
+                      </div>
+                      <div className="shipping-meta-row">
+                        <span className="lbl">วิธีส่ง:</span>
+                        <span className="val font-bold text-emerald">
+                          {isSparePartsSale
+                            ? '🚚 พัสดุด่วน (Express Courier)'
+                            : '🚚 พัสดุด่วน / ขนส่งเครื่องจักร (Express Logistics)'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Recipient Card (PROMINENT FOR COURIER) ── */}
+                <div className="shipping-recipient-card">
+                  <div className="shipping-recipient-header">
+                    <span className="recipient-tag">📥 นำส่งถึง (DELIVER TO / RECIPIENT)</span>
+                    <span className="recipient-priority">⚡ พัสดุด่วนพิเศษ (PRIORITY PARCEL)</span>
+                  </div>
+                  <div className="shipping-recipient-body">
+                    <div className="recipient-main-row">
+                      <div className="recipient-name-col">
+                        <span className="recipient-label">ชื่อผู้รับ / บริษัท:</span>
+                        <div className="recipient-name-text">
+                          {sale.customer ? sale.customer.name : 'ลูกค้าทั่วไป'}
+                        </div>
+                      </div>
+                      <div className="recipient-phone-box">
+                        <span className="phone-label">เบอร์โทรศัพท์ติดต่อผู้รับ:</span>
+                        <div className="phone-number-text">
+                          📞 {sale.customer?.phone || '-'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="recipient-address-wrap">
+                      <span className="address-label">📍 ที่อยู่จัดส่งพัสดุ (DELIVERY ADDRESS):</span>
+                      <div className="recipient-address-text">
+                        {sale.customer?.address || 'ลูกค้ามารับสินค้าเองที่หน้าร้าน / ไม่ระบุที่อยู่จัดส่ง'}
+                      </div>
+                    </div>
+
+                    <div className="recipient-tax-text">
+                      เลขประจำตัวผู้เสียภาษี (TAX ID): {sale.customer?.taxId ?? '0'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── For Machines (Landscape): Items & Safety Signs Bar ── */}
+                {!isSparePartsSale && (
+                  <div className="shipping-machine-bottom-bar">
+                    <div className="shipping-machine-items-card">
+                      <div className="shipping-items-tag">📦 รายการสินค้าในบรรจุภัณฑ์ (SHIPMENT ITEMS):</div>
+                      <div className="shipping-items-list">
+                        {(sale.items || []).map((it, idx) => (
+                          <span key={idx} className="shipping-item-pill">
+                            <b>{it.name || it.product_name}</b> × {it.quantity || 1} {it.unit || 'เครื่อง'}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="shipping-safety-badges">
+                      <div className="safety-badge">
+                        <span className="safety-icon">⬆️</span>
+                        <span className="safety-txt">ด้านนี้ตั้งขึ้น<br/>THIS WAY UP</span>
+                      </div>
+                      <div className="safety-badge">
+                        <span className="safety-icon">☂️</span>
+                        <span className="safety-txt">ระวังเปียกฝน<br/>KEEP DRY</span>
+                      </div>
+                      <div className="safety-badge">
+                        <span className="safety-icon">⚠️</span>
+                        <span className="safety-txt">ระวังแตกหัก<br/>HANDLE WITH CARE</span>
+                      </div>
+                    </div>
                   </div>
                 )}
 
-                <div
-                  className="receipt-paper receipt-page-2"
-                  style={{
-                    transform: `scale(${scale})`,
-                    transformOrigin: 'top left',
-                  }}
-                >
-                  {/* ── Shipping Header ── */}
-                  <div className="shipping-header">
-                    <div className="shipping-logo-wrap">
-                      <img src={logoImg} alt="HUALIAN Logo" className="shipping-logo" />
-                      <div className="shipping-company-titles">
-                        <h2 className="shipping-company-name">
-                          {store.name || 'ห้างหุ้นส่วนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.'}
-                        </h2>
-                        <p className="shipping-company-sub">
-                          ศูนย์จำหน่ายเครื่องจักรบรรจุภัณฑ์และอะไหล่แท้ HUALIAN มาตรฐานโรงงาน
-                        </p>
-                      </div>
-                    </div>
-                    <div className="shipping-doc-badge">
-                      <div className="shipping-badge-title">📦 ใบปะหน้ากล่องพัสดุ</div>
-                      <div className="shipping-badge-en">PARCEL SHIPPING LABEL</div>
-                      <div className="shipping-barcode-wrap">
-                        <BarcodeSvg value={sale.id} />
-                        <span className="shipping-barcode-text">*{sale.id}*</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── Sender & Order Info Grid ── */}
-                  <div className="shipping-info-grid">
-                    {/* Left: Sender Card */}
-                    <div className="shipping-card shipping-sender-card">
-                      <div className="shipping-card-header sender-header">
-                        <span className="card-tag">📌 ผู้ส่ง (FROM / SENDER)</span>
-                      </div>
-                      <div className="shipping-card-body">
-                        <div className="shipping-party-name">
-                          {store.name || 'ห้างหุ้นส่วนจำกัด หัวเหรียญ อีสาน HUALIAN ESAN LTD.,PART.'}
-                        </div>
-                        <div className="shipping-party-address">
-                          {store.address ||
-                            'สำนักงานใหญ่ : 841/7 หมู่ 5 ต.หนองจะบก อ.เมืองนครราชสีมา จ.นครราชสีมา 30000'}
-                        </div>
-                        <div className="shipping-party-phone font-bold">
-                          📞 โทร: {store.phone || '044-002716 , 085-4957093'}
-                        </div>
-                        <div className="shipping-sender-staff">
-                          ผู้จัดเตรียมพัสดุ: <b>{sale.employee || 'หน้าร้าน'}</b>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right: Order Meta Card */}
-                    <div className="shipping-card shipping-order-card">
-                      <div className="shipping-card-header order-header">
-                        <span className="card-tag">📋 ข้อมูลการจัดส่ง (SHIPMENT DETAILS)</span>
-                      </div>
-                      <div className="shipping-card-body">
-                        <div className="shipping-meta-row">
-                          <span className="lbl">เลขที่คำสั่งซื้อ:</span>
-                          <span className="val font-bold text-blue">{sale.id}</span>
-                        </div>
-                        <div className="shipping-meta-row">
-                          <span className="lbl">วันที่จัดส่ง:</span>
-                          <span className="val">{formatDateThaiShort(sale.date)}</span>
-                        </div>
-                        <div className="shipping-meta-row">
-                          <span className="lbl">เวลาที่พิมพ์:</span>
-                          <span className="val">{formatPrintTimestamp()}</span>
-                        </div>
-                        <div className="shipping-meta-row">
-                          <span className="lbl">วิธีส่ง:</span>
-                          <span className="val font-bold text-emerald">🚚 พัสดุด่วน (Express Courier)</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── Recipient Card (PROMINENT FOR COURIER) ── */}
-                  <div className="shipping-recipient-card">
-                    <div className="shipping-recipient-header">
-                      <span className="recipient-tag">📥 นำส่งถึง (DELIVER TO / RECIPIENT)</span>
-                      <span className="recipient-priority">⚡ พัสดุด่วนพิเศษ (PRIORITY PARCEL)</span>
-                    </div>
-                    <div className="shipping-recipient-body">
-                      <div className="recipient-main-row">
-                        <div className="recipient-name-col">
-                          <span className="recipient-label">ชื่อผู้รับ / บริษัท:</span>
-                          <div className="recipient-name-text">
-                            {sale.customer ? sale.customer.name : 'ลูกค้าทั่วไป'}
-                          </div>
-                        </div>
-                        <div className="recipient-phone-box">
-                          <span className="phone-label">เบอร์โทรศัพท์ติดต่อผู้รับ:</span>
-                          <div className="phone-number-text">
-                            📞 {sale.customer?.phone || '-'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="recipient-address-wrap">
-                        <span className="address-label">📍 ที่อยู่จัดส่งพัสดุ (DELIVERY ADDRESS):</span>
-                        <div className="recipient-address-text">
-                          {sale.customer?.address || 'ลูกค้ามารับสินค้าเองที่หน้าร้าน / ไม่ระบุที่อยู่จัดส่ง'}
-                        </div>
-                      </div>
-
-                      <div className="recipient-tax-text">
-                        เลขประจำตัวผู้เสียภาษี (TAX ID): {sale.customer?.taxId ?? '0'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── Cut Guide Line below label ── */}
+                {/* ── Cut Guide Line below label (เฉพาะอะไหล่ที่พิมพ์ครึ่งหน้า A4) ── */}
+                {isSparePartsSale && (
                   <div className="shipping-cut-guide">
                     <span className="cut-icon">✂️</span>
                     <span className="cut-dashed-line"></span>
@@ -792,52 +863,47 @@ const Receipt = ({ sale, onClose }) => {
                     <span className="cut-dashed-line"></span>
                     <span className="cut-icon">✂️</span>
                   </div>
-                </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
 
         {/* ─── Modal Action Buttons Bar ────────────────────────── */}
         <div className="receipt-actions">
           <div className="receipt-actions-left">
-            {isSparePartsSale ? (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-print-all"
-                  onClick={() => handlePrint('both')}
-                  title="พิมพ์ทั้ง 2 หน้า: หน้า 1 ใบเสร็จ + หน้า 2 ใบปะหน้ากล่อง"
-                >
-                  🖨️ พิมพ์ใบเสร็จ + ใบปะหน้า (2 หน้า)
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-shipping"
-                  onClick={() => handlePrint('shipping')}
-                  title="พิมพ์เฉพาะใบปะหน้ากล่องพัสดุ (หน้า 2)"
-                >
-                  📦 พิมพ์เฉพาะใบปะหน้า (หน้า 2)
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-receipt-only"
-                  onClick={() => handlePrint('receipt')}
-                  title="พิมพ์เฉพาะใบเสร็จรับเงิน (หน้า 1)"
-                >
-                  📄 พิมพ์เฉพาะใบเสร็จ (หน้า 1)
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-primary btn-print-all"
-                onClick={() => handlePrint('receipt')}
-                title="พิมพ์ใบเสร็จรับเงิน A4"
-              >
-                🖨️ พิมพ์ใบเสร็จ A4
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn btn-primary btn-print-all"
+              onClick={() => handlePrint('both')}
+              title={
+                isSparePartsSale
+                  ? 'พิมพ์ทั้ง 2 หน้า: หน้า 1 ใบเสร็จ + หน้า 2 ใบปะหน้ากล่อง'
+                  : 'พิมพ์ทั้ง 2 หน้า: หน้า 1 ใบเสร็จ A4 + หน้า 2 ใบปะหน้าแนวนอน'
+              }
+            >
+              🖨️ พิมพ์ใบเสร็จ + ใบปะหน้า (2 หน้า)
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-shipping"
+              onClick={() => handlePrint('shipping')}
+              title={
+                isSparePartsSale
+                  ? 'พิมพ์เฉพาะใบปะหน้ากล่องพัสดุ (หน้า 2)'
+                  : 'พิมพ์เฉพาะใบปะหน้าเครื่องจักรเต็มหน้าแนวนอน (หน้า 2)'
+              }
+            >
+              📦 {isSparePartsSale ? 'พิมพ์เฉพาะใบปะหน้า (หน้า 2)' : 'พิมพ์ใบปะหน้าแนวนอน (หน้า 2)'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-receipt-only"
+              onClick={() => handlePrint('receipt')}
+              title="พิมพ์เฉพาะใบเสร็จรับเงิน (หน้า 1)"
+            >
+              📄 พิมพ์เฉพาะใบเสร็จ (หน้า 1)
+            </button>
           </div>
           <button type="button" className="btn btn-secondary btn-close" onClick={onClose}>
             ✕ ปิด

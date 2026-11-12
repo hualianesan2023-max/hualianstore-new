@@ -1044,6 +1044,249 @@
   letter-spacing: 0.3px;
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   MACHINE SHIPPING LABEL (ใบปะหน้ากล่องเครื่องจักร แนวนอนเต็มหน้า A4)
+   ═══════════════════════════════════════════════════════════════════ */
+.receipt-wrapper-page-2.receipt-machine-landscape {
+  width: 1123px;
+  height: 794px;
+}
+
+.receipt-page-2.shipping-landscape {
+  width: 1123px;
+  height: 794px;
+  max-width: 1123px;
+  max-height: 794px;
+  padding: 30px 40px 24px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.shipping-landscape .shipping-header {
+  border-bottom: 2.5px solid #0f172a;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.shipping-landscape .shipping-logo {
+  width: 68px;
+  height: 68px;
+}
+
+.shipping-landscape .shipping-company-name {
+  font-size: 19px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.shipping-landscape .shipping-company-sub {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.shipping-landscape .shipping-badge-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.shipping-landscape .shipping-badge-en {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.shipping-landscape .shipping-info-grid {
+  grid-template-columns: 1.25fr 0.75fr;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.shipping-landscape .shipping-card-header {
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.shipping-landscape .shipping-card-body {
+  padding: 10px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.shipping-landscape .shipping-party-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 3px;
+}
+
+.shipping-landscape .shipping-party-address {
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 4px;
+}
+
+.shipping-landscape .shipping-party-phone {
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.shipping-landscape .shipping-sender-staff {
+  margin-top: 5px;
+  font-size: 11.5px;
+  padding-top: 4px;
+}
+
+.shipping-landscape .shipping-meta-row {
+  font-size: 12px;
+  padding: 3px 0;
+}
+
+.shipping-landscape .shipping-recipient-card {
+  border: 3px solid #0f172a;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+.shipping-landscape .shipping-recipient-header {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.shipping-landscape .recipient-priority {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+.shipping-landscape .shipping-recipient-body {
+  padding: 14px 18px 16px;
+}
+
+.shipping-landscape .recipient-main-row {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+}
+
+.shipping-landscape .recipient-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.shipping-landscape .recipient-name-text {
+  font-size: 24px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.shipping-landscape .recipient-phone-box {
+  padding: 8px 16px;
+}
+
+.shipping-landscape .phone-label {
+  font-size: 11px;
+}
+
+.shipping-landscape .phone-number-text {
+  font-size: 22px;
+  font-weight: 800;
+  color: #1e3a8a;
+}
+
+.shipping-landscape .address-label {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.shipping-landscape .recipient-address-text {
+  font-size: 16.5px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #0f172a;
+}
+
+.shipping-landscape .recipient-tax-text {
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* Machine Bottom Bar: Items & Safety Signs */
+.shipping-machine-bottom-bar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: stretch;
+  margin-top: 4px;
+}
+
+.shipping-machine-items-card {
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 8px 14px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.shipping-items-tag {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 5px;
+}
+
+.shipping-items-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shipping-item-pill {
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  color: #0f172a;
+}
+
+.shipping-safety-badges {
+  display: flex;
+  gap: 8px;
+}
+
+.safety-badge {
+  border: 2px solid #0f172a;
+  border-radius: 6px;
+  padding: 6px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-width: 95px;
+  background: #ffffff;
+}
+
+.safety-icon {
+  font-size: 24px;
+  line-height: 1;
+  margin-bottom: 3px;
+}
+
+.safety-txt {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
 /* ── Screen responsiveness ──────────────────────────────────────── */
 @media (max-width: 840px) {
   .receipt-modal {
@@ -1190,6 +1433,32 @@
   body.print-receipt-active .receipt-page-2 {
     height: auto !important;
     max-height: 285mm !important;
+  }
+
+  /* Machine Shipping Label Full-Page Landscape (297mm x 210mm) */
+  @page machineLandscape {
+    size: A4 landscape;
+    margin: 0;
+  }
+
+  body.print-receipt-active .receipt-wrapper-page-2.receipt-machine-landscape {
+    width: 297mm !important;
+    max-width: 297mm !important;
+    height: 210mm !important;
+    max-height: 210mm !important;
+    page: machineLandscape !important;
+    overflow: hidden !important;
+  }
+
+  body.print-receipt-active .receipt-page-2.shipping-landscape {
+    width: 297mm !important;
+    max-width: 297mm !important;
+    height: 210mm !important;
+    max-height: 210mm !important;
+    padding: 10mm 15mm 8mm !important;
+    box-sizing: border-box !important;
+    page: machineLandscape !important;
+    overflow: hidden !important;
   }
 
   /* ══════════════════════════════════════════════════════════════
